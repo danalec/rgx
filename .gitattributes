@@ -1,0 +1,37 @@
+# Test fixtures are bytes, not source. Several are plain text that the
+# tests compare against decoded output, so a checkout that rewrote their
+# line endings would fail the comparison on Windows and nowhere else.
+**/testdata/** -text
+# The same argument for the other fixture directory. crates/rgx-adapters-pdf
+# keeps its real-world PDFs in `fixtures/`, and `core.autocrlf=true` turned
+# reportlab.pdf from 1400 bytes into 1468 on a fresh checkout -- 68 CRs
+# inserted into a PDF stream -- which fails `reportlab_real_file` on the
+# machine that checked the code out and on nobody else's. The directory name
+# is the convention; `-text` is the fix.
+**/fixtures/** -text
+# Fuzzing corpora are seed *inputs* to a decompressor, a container parser or
+# a model loader, and are read byte for byte by the thing under test. The two
+# tracked seeds here (seed-zip-eocd-tail, seed-safetensors-overflow) already
+# contain NULs, which is the whole point of them, and a CRLF rewrite changes
+# the offsets a parser is being tested against. Not `testdata/`, not
+# `fixtures/`, and therefore unprotected until this line existed.
+**/fuzz/corpus/** -text
+
+# benchmark/diffrig/fx/ is the differential harness's fixture directory, and
+# the fixtures are BYTES, not source. crlf.txt and crlf2.txt are CRLF on
+# purpose -- that is the difference the harness exists to catch -- and bin.dat
+# holds a NUL. autocrlf=true would rewrite the first pair and fail the
+# comparison on Windows and nowhere else, and would corrupt the second.
+/benchmark/diffrig/fx/** -text
+
+# Pack stores and manifests are binary formats.
+**/.rgx-tv/** -text
+
+# Shell scripts have to reach bash as LF. autocrlf=true hands a Windows
+# checkout every .sh as CRLF, and bash reads `set -o pipefail\r` as an
+# invalid option name, so the documented release command (`bash
+# scripts/release-all.sh`) died at its own `set` line. The scripts are
+# source, not fixtures: they normalise, and the line endings are pinned
+# here so the working tree cannot drift from the index again.
+*.sh text eol=lf
+

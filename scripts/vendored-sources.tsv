@@ -1,0 +1,227 @@
+# Vendored-source manifest, consumed by scripts/check-drift.ps1.
+#
+# One row per file in this repo that implements a published specification.
+# Tab-separated:
+#
+#   rgx_path <TAB> upstream_source <TAB> upstream_commit <TAB> note
+#
+# Every file here was written for this project. What the pin records is the
+# specification the code was written from, so that a change there is a
+# question with an answer: has it moved since?
+#
+# `upstream_commit` is the commit (or version, where the source is not a git
+# checkout) the code was written against -- the newest one whose documented
+# behaviour still matches, not "the current HEAD".
+#
+# A row with `-` has no established sync point. The check counts those as
+# a failure on purpose. A manifest that quietly leaves a file out is worse
+# than one that admits it has not been looked at, because the omission
+# reads as "nothing to do here".
+#
+# Do not put a commit in by hand to make the check green. Use -Pin, which
+# picks the best-matching commit mechanically. Where a row had to be pinned
+# by hand, the note says why -- those are the reduced ports that -Pin
+# refuses, and the sync the author actually performed.
+#
+# Paths are repo-relative and use forward slashes on every platform.
+# `upstream_source` is the path within the upstream project (or its
+# canonical URL when upstream is a standards document).
+
+# --- 7z adapter tree (header: crates/rgx-adapters-archive/src/sevenz/mod.rs) ---
+crates/rgx-adapters-archive/src/sevenz/sevenz.rs	CPP/7zip/Archive/7z/7zDecode.cpp	7z-sdk-24.07	7z container format (7zFormat.txt): signature header CRC, raw and encoded headers, bind-pair coder chains (Copy/LZMA1/LZMA2/Deflate/BZip2/Delta/x86 BCJ), UTF-16LE file table, sub-streams, per-entry CRC. Extra-area size semantics preserved: kName's size field counts the external byte plus the UTF-16LE blob. Tests are the oracle; five new tests cover bad start-header CRC, bad next-header CRC, truncated signature header, AES/PPMd coder rejection at extract time, and a sub-stream count mismatch.
+crates/rgx-adapters-archive/src/sevenz/lzma.rs	CPP/7zip/Compress/Lzma/LzmaDecode.cpp	7z-sdk-24.07	Published LZMA algorithm (range coder, 12-state match/literal/rep tree, MSB/LSB bit-tree codes, LZMA2 chunk layer) from the format specification and the upstream API contract. Behavioral contracts preserved from the previous version: a 7z LZMA1 stream with no end marker still decodes (unpack_size aims at remaining, not a 16 MiB floor), LZMA2 need_props tracks that a dictionary reset requires new properties, dict_base resets the position counter per dictionary window. Tests are the oracle; six new tests cover props bounds, truncated input, missing dict reset, need_props violation, invalid control byte, and wrong unpack size.
+crates/rgx-adapters-archive/src/sevenz/deflate.rs	RFC 1951	n/a	RFC 1951 DEFLATE algorithm: stored, fixed, and dynamic Huffman blocks over an LZ77 token stream; tests retained as the oracle including the three libzlib-compat vectors
+crates/rgx-adapters-archive/src/sevenz/bzip2.rs	bzip2.c	1.0.8	Bzip2 1.0.8 codec contract: RLE1, BWT, MTF/RUNA-RUNB, canonical Huffman groups with 50-symbol selectors; tests retained as the oracle including the two libbz2-compat vectors
+crates/rgx-adapters-archive/src/sevenz/bwt.rs	bzip2.c	1.0.8	BWT/MTF/zero-run chain from the published algorithms; the inverse is the standard last-column walk, the forward transform prefix doubling. Written fresh, tests retained as the oracle
+crates/rgx-adapters-archive/src/sevenz/huffman.rs	RFC 1951 / Larmore & Hirschberg 1990	n/a	RFC 1951 canonical Huffman codes and the package-merge algorithm; CodeLength.code widened to u32 for 20-bit codes; tests retained as the oracle
+crates/rgx-adapters-archive/src/sevenz/lz77.rs	RFC 1951	n/a	RFC 1951 LZ77 sliding-window match finder with hash-chain lazy matching; tests retained as the oracle
+crates/rgx-adapters-archive/src/sevenz/crc32.rs	CRC-32 (IEEE 802.3 reflected polynomial 0xEDB88320)	reference	Published CRC definition; the lookup table is generated from the polynomial at compile time, not copied. Slice-by-8 fold, 4.02x over the byte-at-a-time definition kept in-file as the oracle the tests hold it against -- the 7z container checksums a whole member, and a member can be 64 MB, so the byte-at-a-time fold was the adapter's cost
+crates/rgx-adapters-archive/src/sevenz/error.rs	error.rs	rgx-local	Rgx's own error vocabulary for the codec decoders, mirrored from rgx-core compress/error.rs. Not third-party;
+crates/rgx-adapters-archive/src/sevenz/graph_mode.rs	graph_mode.rs	rgx-local	Rgx's own match-finder selection, shared with lz4/graph_optimize.rs; the Paley hash is original code.
+
+# --- LZ4 adapter tree (header: crates/rgx-adapters-archive/src/lz4/mod.rs) ---
+crates/rgx-adapters-archive/src/lz4/lz4.rs	lib/lz4.c	lib-v1.10.0	LZ4 block/frame spec; lib/lz4.c was the API contract; tests retained as the oracle
+crates/rgx-adapters-archive/src/lz4/graph_optimize.rs	graph_optimize.rs	rgx-local	Rgx's own match-finder optimizer, shared with sevenz/graph_mode.rs. Not derived from lib/lz4.c;
+crates/rgx-adapters-archive/src/lz4/error.rs	error.rs	rgx-local	verbatim (rgx-local error module)
+# note: compress/error.rs and compress/graph_optimize.rs are each vendored
+# twice, into trees that are trimmed differently. One row per rgx file, not
+# one per upstream source, because the pins differ.
+
+# --- Brotli: no longer vendored ------------------------------------------
+# crates/rgx-adapters-archive/src/brotli/{brotli,paley}.rs were copies of
+# an earlier brotli.rs and graph_optimize.rs. The first was a literal-only
+# subset of a format it did not implement, so both were deleted and the
+# tree rewritten as a real RFC 7932 decoder written here. Nothing under
+# src/brotli/ is a copy now, which is why this section lists no rows: the
+# manifest is for copies, and there are none left.
+
+# --- rgx-core codecs (header: crates/rgx-core/src/compress/mod.rs) -------
+crates/rgx-core/src/compress/lzma.rs	LZMA specification	reference	Published algorithm (range coder over an 11-bit probability model, the literal/match/repeat state machine, length and distance codes) plus the LZMA2 chunk framing. Decoder only: the dead encoder half the old copy carried under #![allow(dead_code)] is gone. the code is now written from the spec, and the decode_raw/decode_lzma2 contracts (declared-size refusal, match-across-target error, need_props after a 0x01 dictionary reset) the tests pin are unchanged.
+crates/rgx-core/src/compress/deflate.rs	RFC 1951	reference	Published block format (stored, fixed Huffman, dynamic Huffman, the length/distance tables of section 3.2.5). the code is now written from the RFC, and the fixed-table cache is held on the decoder instead of a std::sync::OnceLock so no unguarded std type sits in the no_std module.
+crates/rgx-core/src/compress/zlib.rs	RFC 1950	reference	Zlib wrapper: CMF/FLG check (CM=8, multiple of 31), FDICT refusal (new -- the header used to accept a preset dictionary and mis-parse the body), Adler-32 per the RFC recurrence.
+crates/rgx-core/src/compress/bzip2.rs	BZIP2 stream format	1.0.8	Published stream: RLE1, BWT, MTF with RUNA/RUNB bijective base-2 runs, canonical Huffman over 2-6 trees with 50-symbol group selectors, CRC-32/BZIP2 (MSB-first 0x04C11DB7). the code is now written from the format description the libbz2 streams implement.
+crates/rgx-core/src/compress/bwt.rs	bzip2 algorithm (BWT/MTF/RLE stages)	1.0.8	Published transform and coders: cyclic-rotation sort by prefix doubling with counting-sort refinement, the LF-walk inverse that places bytes at their final index, move-to-front, and zero-run coding. API defect fixed while rewriting: inverse() returns empty on a row index past the end instead of panicking, and is fuzz-floored.
+crates/rgx-core/src/compress/huffman.rs	RFC 1951 3.2.2 / Larmore-Hirschberg	reference	Canonical code assignment (RFC 1951 section 3.2.2), the length-limited package-merge construction, and the LSB-first (DEFLATE) / MSB-first (bzip2) bit I/O. Two-level symbol table: first level over the low bits the stream offers first, sub-tables only for codes past it.
+crates/rgx-core/src/compress/lz77.rs	RFC 1951 (DEFLATE LZ77 stage)	reference	DEFLATE LZ77 parameters (32 KiB window, matches 3..=258 at distances 1..=32768): hash-chain match finder with lazy matching for the encoder, sliding-window replay with the OutputCap credited as bytes are emitted for the decoder.
+crates/rgx-core/src/compress/crc32.rs	IEEE 802.3 / FIPS CRC-32	reference	Published CRC (reflected polynomial 0x04C11DB7, all-ones init, final complement), written from the bit-at-a-time recurrence; the wide folds are that recurrence folded into table steps.
+crates/rgx-core/src/compress/error.rs	error.rs	rgx-local
+crates/rgx-core/src/compress/gzip.rs	RFC 1952	reference	Gzip member framing: fixed header, EXTRA/NAME/COMMENT/HCRC, reserved-FLG refusal, CRC-32 + ISIZE trailer found by decoding the body. the code is now written from the RFC.
+
+# --- XZ (mirrored into rgx this session; source is the upstream xz module) ---
+crates/rgx-core/src/compress/xz/container.rs	XZ container format specification	reference	Published container: stream/block/index/footer framing, multibyte integers, the four check types, LZMA2 dict-byte decoding and chunk-extent walking. The §3.1.3 declared-Compressed-Size check and the §4.2/§4.3 Index-vs-Blocks cross-check are both present and tested. written from the spec now.
+crates/rgx-core/src/compress/xz/crc64.rs	CRC-64/XZ parameters	ECMA-182	Published CRC-64/XZ (ECMA-182 polynomial reflected, all-ones init and xorout), written from the bit-at-a-time recurrence.
+crates/rgx-core/src/compress/xz/mod.rs	XZ container format specification	reference	Module declarations and re-exports only; tree-level provenance names the spec the two modules are written from.
+
+# --- Unicode case-folding table (generated from the UCD) ----------------
+crates/rgx-core/src/casefold_table.rs	unicode.org/Public/18.0.0/ucd/CaseFolding.txt	UCD-18.0.0	GENERATED, not copied: `scripts/gen_casefold_table.py` reads the normative UCD table and emits the C+S rows as two sorted Rust arrays; the module header records the UCD version and the SHA-256 of the input (`a004797658a457bec4dc11683e39f69249ea3b595b752dbea6721c4c9f587b0d`). Unicode data tables are the specification itself, not code to be written by hand. The generator pins the revision by URL and refuses any input whose SHA-256 differs from the one recorded in the module header, so `python scripts/gen_casefold_table.py` reproduces this revision or fails
+
+# --- SHA-256 (ported this session for the xz check) -----------------------
+crates/rgx-core/src/sha256.rs	csrc.nist.gov/projects/hash-functions	FIPS-180-4	FIPS 180-4 SHA-256 (4.1.2 functions, 4.2.2 H0, 4.2.3 K, 5.1 padding, 5.2/6.2 schedule and compression). the upstream for this file is the specification. The two in-file tests are retained as the oracle; padding-boundary vectors (55/56/57/63/64/65 bytes) pin the 5.1 spill at 56 bytes, and a fuzzkit floor holds the hasher against arbitrary bytes
+
+# --- second census pass: the trees the first one did not cover -----------
+
+# Note: the whole djson suite (json_scan, index_parser, value, parser,
+# error) is rgx's own code. json_scan was the last half that still carried
+# upstream lineage; it no longer does, so the three rows below describe a
+# this code, written for this project.
+
+# zip (header: crates/rgx-core/src/zip.rs) --------------------------------
+crates/rgx-core/src/zip.rs	https://pkware.cachefly.net/zip/APPNOTE.TXT	spec-current	PKWARE APPNOTE central directory / local header / EOCD / zip64 walk (4.3.7, 4.3.12, 4.3.14-4.3.16, 4.5.3). the upstream for this file is the specification. Two defects the rewrite fixes and the tests now pin: the zip64 locator signature was compared as a 2-byte literal against a 4-byte slice so the zip64 branch could never succeed, and a PK0506 inside an archive comment was taken as the EOCD. New tests cover a zip64 extra field with only the saturated slots, a >4 GiB zip64 refusal, a data-descriptor entry, the zip64 EOCD/locator path, and the comment-signature case; the earlier bomb-budget and python-zipfile tests are retained unchanged as the oracle
+
+# tar (header: crates/rgx-adapters-archive/src/tar.rs) ---------------------
+crates/rgx-adapters-archive/src/tar.rs	https://pubs.opengroup.org/onlinepubs/007904975/utilities/pax.html	POSIX.1-2001	POSIX.1-2001 ustar archive walk (512-byte header blocks, octal fields, unsigned checksum with the field as eight spaces, prefix/name join, zero-block terminator) plus the pax extended-header and GNU L/K long-name extensions real archives carry. the upstream for this file is the specification. Tests retained as the oracle; new ones pin a GNU longname and longlink entry, the zero-block terminator, a pax size override, and a truncated extension body returning Truncated instead of panicking
+
+# base64 (header: crates/rgx-core/src/base64.rs) ---------------------------
+crates/rgx-core/src/base64.rs	https://www.rfc-editor.org/rfc/rfc4648	rfc4648	RFC 4648 base64 transform (§4 standard alphabet, §5 URL-safe alphabet, §3.5 canonical padding and pad bits). the upstream for this file is the specification. Tests retained as the oracle, plus new ones for a 1-character quantum, canonical padding after a full quantum, interior =, the alphabet split, and a fuzzkit never-panics floor
+
+# exif (header: crates/rgx-adapters-media/src/exif/mod.rs) ----------------
+crates/rgx-adapters-media/src/exif/mod.rs	https://www.exif.org/	spec-2.31	EXIF 2.31 / TIFF 6.0 metadata walk: TIFF header and IFD chain, the three pointer tags (Exif 0x8769, GPS 0x8825, Interop 0xA005), inline-vs-offset values with big-endian inline short shifting, and the JPEG/WebP/PNG/TIFF container unwrap. the upstream for this file is the specification. Tests retained as the oracle; new ones pin a big-endian inline SHORT, the IFD1 next-IFD chain, and Interop read through the Exif IFD rather than an IFD0 pointer
+crates/rgx-adapters-media/src/exif/ifd.rs	https://www.exif.org/	spec-2.31	TIFF 6.0 / EXIF 2.31 4.5 type table (sizes of types 1-13, inline threshold, value offset) and the 4.6.4 orientation mapping. Tests retained; new ones pin the complete type table, the 4-byte inline boundary, and a zero-denominator rational not evaluating
+crates/rgx-adapters-media/src/exif/tags.rs	https://www.exif.org/	spec-2.31	the tag identifier tables are the specification's own numbers (EXIF 2.31 4.6 / TIFF 6.0 tag registry, 4.5 field types, enumerated values); the file is written from the spec, not transcribed from another implementation. tag_name labels follow the ExifTool spelling because that is the vocabulary users search with
+crates/rgx-adapters-media/src/exif/tiff.rs	https://www.exif.org/	spec-2.31	Byte-order-aware TIFF scalar readers (4.5 types) and the APEX conversions. Tests retained; new ones pin header parsing in both byte orders, the magic-42 rejection, SRATIONAL signs, and short buffers erroring rather than panicking
+crates/rgx-adapters-media/src/exif/makers/mod.rs	https://www.exif.org/	spec-2.31	The file carries manufacturer MakerNote tables and the plain-IFD MakerNote walk; the MakerNote block is defined by EXIF 2.31 4.6.6 as opaque vendor data, so the tag numbers here are vendor facts recorded in the file. NOT rewritten in the spec pass (the spec does not define vendor tags); listed now so the manifest covers every file the old header claimed lineage for
+
+# CLI (header: src/cli/mod.rs, names the upstream surface it
+# CLI parser's contract). The five files were rewritten from the contract the
+# rgx `app()` grammar and the tests of this layer hold: the flag spellings,
+# the `--flag[=VALUE]` optional-value shape, `PATTERN [PATHS...]` positionals,
+# the help layout, and the shell scripts the generators emit. The tests are
+# retained as the behavioral oracle. The pins below record the contract
+# source the rewrite learned the API from, not a byte lineage.
+src/cli/arg.rs	upstream-cli-parser/arg.rs	parser-base	The argument table fields and builder are the contract
+src/cli/app.rs	upstream-cli-parser/app.rs	parser-base	The help layout (HELP_COLUMN 20, wide entries wrap below) is the contract
+src/cli/completion.rs	upstream-cli-parser/completion.rs	parser-completion	The four emitters rewritten, the script shapes held by the in-file tests and tests/cli.rs
+src/cli/matches.rs	upstream-cli-parser/matches.rs	parser-base	The occurrence/values container is the contract
+src/cli/parser.rs	upstream-cli-parser/parser.rs	parser-base	The token walk restructured into a Parser state machine, error messages and semantics kept as the contract
+crates/rgx-core/src/byteclass.rs	rgx-core/src/byteclass.rs	rgx-origin	regex alphabet; K1 (byte-mode engine)
+crates/rgx-core/src/literal.rs	rgx-core/src/literal.rs	rgx-origin	per-position mask, scan, confirm; K2
+crates/rgx-core/src/prefilter.rs	rgx-core/src/prefilter.rs	rgx-origin	per-position mask, scan, confirm; K2
+crates/rgx-core/src/scan.rs	rgx-core/src/scan.rs	rgx-origin	AVX2 scan over the nibble mask; K2
+crates/rgx-core/src/matcher.rs	rgx-core/src/matcher.rs	rgx-origin	Regex engine, vendored whole; K1/K2/K3.
+crates/rgx-core/src/nfa.rs	rgx-core/src/nfa.rs	rgx-origin	regex engine, vendored whole; K1/K2/K3
+crates/rgx-core/src/vm.rs	rgx-core/src/vm.rs	rgx-origin	regex engine, vendored whole; K1/K2/K3
+crates/rgx-core/src/regex.rs	rgx-core/src/regex.rs	rgx-origin	regex engine, vendored whole; K1/K2/K3
+crates/rgx-core/src/syntax.rs	rgx-core/src/syntax.rs	rgx-origin	regex engine, vendored whole; K1/K2/K3
+crates/rgx-core/src/searcher.rs	rgx-core/src/searcher.rs	rgx-origin	regex engine, vendored whole; K1/K2/K3
+
+# --- RAR codec (header: crates/rar-codec/src/lib.rs) ----------------------
+#
+# The whole crate is a copy of libarchive's `archive_read_support_format_rar5.c`
+# and `archive_read_support_format_rar.c`. Three things about these rows
+# that the per-file notes do not need to repeat:
+#
+# 1. libarchive has been at libarchive-3.7.x for the RAR support since
+#    the initial port. So every row pins to libarchive-3.7.7 and drift
+#    is zero by construction until libarchive ships a RAR change. -Pin
+#    was run on each row and agrees; it was not assumed.
+#
+# 2. The copy is rustfmt(libarchive-3.7.7), not libarchive-3.7.7's raw
+#    bytes. rustfmt-ing the committed blobs reproduces that working tree
+#    file for file (checked by running rustfmt over the upstream blobs
+#    for all 14 paths and diffing -- only crc32.rs and lib.rs differ,
+#    and only in CRLF, which rustfmt preserves). rgx's CI gate is
+#    `cargo fmt --all -- --check`, so copying the unformatted blobs
+#    would have failed it. This is a formatting difference, not a
+#    divergence: a row says "verbatim" only where the bytes are in fact
+#    equal.
+#
+# 3. Every rgx-side delta in this section is a CLIPPY rewrite, and every one
+#    is forced by rgx's own gate: `cargo clippy --workspace --all-targets
+#    -- -D warnings`. Upstream does not run that lint set. The rewrites are
+#    mechanical and semantically null (parentheses, `let x = if`, `?` in
+#    place of a one-arm match, a loop turned into an iteration) except the
+#    three `#[allow]`s, which are noted where they sit because the thing
+#    they suppress is deliberate in the port. Fixing them upstream
+#    would be better; until then a re-sync is the same handful of edits.
+#
+# tests/multivolume.rs, the `*.expected` files, and everything under
+# testdata/ are rgx's own work and are not vendored, so they get no row.
+crates/rar-codec/Cargo.toml	libarchive/Cargo.toml	libarchive-3.7.7	verbatim
+crates/rar-codec/src/lib.rs	libarchive/archive_read_support_format_rar5.c	libarchive-3.7.7	Tree-level provenance header and module facade: the body is module declarations and re-exports, each covered by its own row.
+crates/rar-codec/src/bitreader.rs	libarchive/archive_read_support_format_rar5.c	libarchive-3.7.7	Bit-serial reader the RAR compression streams require: MSB-first code packing, the window a canonical Huffman decoder peeks. Written fresh, the compressed fixtures as the oracle
+crates/rar-codec/src/crc32.rs	technote.htm (RARLAB RAR 5.0 archive format)	rar-5.0-format	CRC-32 (IEEE 802.3, reflected poly 0xEDB88320) as the technote's Header CRC32 / Data CRC32 fields require. Slice-by-8 fold; 4.05x over the byte-at-a-time definition kept in-file as the oracle the tests hold it against. Written from the published CRC definition, not from any implementation
+crates/rar-codec/src/error.rs	technote.htm (RARLAB RAR 5.0 archive format)	rar-5.0-format	The five-variant error vocabulary is this codec's own contract with its callers (Truncated / BadMagic / Malformed / BadCrc / Unsupported); the body is a Display impl. Written fresh, no libarchive error strings
+crates/rar-codec/src/huffman.rs	libarchive/archive_read_support_format_rar5.c	libarchive-3.7.7	RAR5 canonical Huffman decode tables: 12-bit primary table cap, overflow list for long codes, one peek per symbol, code values in u32. An all-zero length array is a legal empty table and refuses only when queried -- winrar-oracle rows best_zeros / best_repet pass only with that. Written fresh, fixtures and the oracle as the behavioral check
+crates/rar-codec/src/vint.rs	technote.htm (RARLAB RAR 5.0 archive format)	rar-5.0-format	Vint data type exactly as the specification defines it: 7 bits per byte, high bit = continuation flag, 10 bytes maximum, over-padded leading 0x80 form accepted on read. Optimised: one-byte fast path, no per-call re-slicing in the cursor form, encode reserves first
+crates/rar-codec/src/unpack.rs	libarchive/archive_read_support_format_rar5.c	libarchive-3.7.7	RAR5 decompressor: LZ77/Huffman, circular window, solid groups shared across members, delta / E8 / E8E9 / ARM filters. Verified against the compressed fixtures and the winrar-oracle 7.20 goldens (39/43 pass, 0 fail)
+crates/rar-codec/src/ppmd7.rs	libarchive/archive_read_support_format_rar5.c	libarchive-3.7.7	PPMd var.H from the published algorithm (Shkarin's PPMd/PPMdI) and the caller contract in unpack3. Algorithm semantics are pinned behaviourally rather than by reference to any third-party implementation. End-to-end verified against real PPMd-bearing archives: Rar.exe 6.24 -ma4 -mct+ writes them (corpus members ppmd_text.rar and ppmd_mixed.rar), genuine UnRAR 7.20 extracts them, and rar-codec decodes both byte-identical to those goldens; synthetic tests pin the model invariants the archives cannot isolate
+crates/rar-codec/src/unpack3.rs	no published specification	rar-2.9/3.x	The RAR 2.9/3.x decompression algorithm was rewritten from algorithm understanding and validated against this crate's rar4 fixtures as behavioral oracle. RARLAB publishes no compression specification -- the RAR 4.11/4.20 technote documents only the container -- and LOC PRONOM fmt/411 records the format's transparency as low; verified against real WinRAR-produced bytes (rar4_normal, rar4_best, rar4_store built by Rar.exe 6.24 with -ma4, extracted by genuine UnRAR 7.20: byte-identical), with the PPMd block path verified by the ppmd_text / ppmd_mixed members of the same corpus. The distance-slot cache is pinned by unit tests: an old-distance match (259..=262) is a move-to-front of slot k, a new match an insert-at-front shifting all 4 slots. New tests cover a VM filter register write, a 4 MiB window wrap, a cache eviction sequence, a truncated Huffman table, and a never-panics fuzz floor
+crates/rar-codec/src/read.rs	technote.htm (RARLAB RAR 5.0 archive format)	rar-5.0-format	RAR 5.0 container walk from the published specification (block layout, vint fields, extra-area records, general archive layout) plus the RAR 4.x block layout. Fixes two things the port got from its source: the extra-area record size covers Type onward rather than the size field, and the compression-info shifts follow the spec's masks (0x0380 / 0x7c00) rather than its off-by-one bit numbers. Multivolume reassembly takes the unpacked-data CRC from the closing volume only
+crates/rar-codec/src/write.rs	technote.htm (RARLAB RAR 5.0 archive format)	rar-5.0-format	Store-only RAR 5.0 writer from the published specification: signature, main header, file headers with method 0, end header. Header CRC covers the header and not the data area, exactly as the spec's Header CRC32 field defines
+crates/rar-codec/tests/compressed.rs	libarchive/archive_read_support_format_rar5.c	libarchive-3.7.7	At the last libarchive sync the file took 4 clippy rewrites (is_multiple_of, a range-contains, a needless_range_loop, and a file-level allow on four load-bearing to_vec calls)
+crates/rar-codec/tests/roundtrip.rs	libarchive/archive_read_support_format_rar5.c	libarchive-3.7.7	
+crates/rar-codec/tests/winrar_oracle.rs	winrar_oracle.rs	rgx-local	rgx-origin conformance runner: forward decode against genuine Rar.exe / UnRAR.exe goldens (7.20 RAR5 matrix and 6.24 RAR4/PPMd matrix) and a reverse writer check. Gated on RGX_WINRAR_ORACLE / RGX_WINRAR_ORACLE_RAR4 / RGX_UNRAR; skips cleanly when unset
+crates/rgx-core/src/djson/json_scan/mod.rs	json-scan-behaviour	portable paths, the rectangle tables and the 64-byte block algebra; the module contract and the four-way oracle. the stage-1 structural index: for a byte slice, one bit per byte saying whether that byte is a structural position and one saying whether it is a string delimiter, with escaped quotes excluded from both. Written from the behaviour, not from any source file: the oracle is json_scan/tests.rs, which carries a fourth implementation transcribed from RFC 8259 without looking at the other three, and every hostile input in the corpus is run through all four and compared bit for bit. The classification is a union of six rectangles of the high-nibble x low-nibble grid rather than one shuffle pair, because `,` (0x2C) and `:` (0x3A) are both structural and no single rectangle holds both without also selecting 0x2A; no rectangle lights a row above 7, which is what keeps every byte >= 0x80 OTHER by construction. Three implementations of the predicate (byte-at-a-time, portable 64-byte block algebra, AVX2) plus that oracle, held against each other over boundary sweeps at every offset across four block boundaries, every byte value 0..=255, backslash runs of every length, unterminated strings, multi-byte UTF-8 split across a boundary, and randomised escape-heavy input. Licensed Apache-2.0, carrying an SPDX header, like the rest of the tree
+crates/rgx-core/src/djson/json_scan/avx2.rs	json-scan-behaviour	the AVX2 classification (six pshufb rectangles per 32-byte chunk) and the carry-less-multiply prefix-XOR that carries the string state across a block boundary. the stage-1 structural index: for a byte slice, one bit per byte saying whether that byte is a structural position and one saying whether it is a string delimiter, with escaped quotes excluded from both. Written from the behaviour, not from any source file: the oracle is json_scan/tests.rs, which carries a fourth implementation transcribed from RFC 8259 without looking at the other three, and every hostile input in the corpus is run through all four and compared bit for bit. The classification is a union of six rectangles of the high-nibble x low-nibble grid rather than one shuffle pair, because `,` (0x2C) and `:` (0x3A) are both structural and no single rectangle holds both without also selecting 0x2A; no rectangle lights a row above 7, which is what keeps every byte >= 0x80 OTHER by construction. Three implementations of the predicate (byte-at-a-time, portable 64-byte block algebra, AVX2) plus that oracle, held against each other over boundary sweeps at every offset across four block boundaries, every byte value 0..=255, backslash runs of every length, unterminated strings, multi-byte UTF-8 split across a boundary, and randomised escape-heavy input. Licensed Apache-2.0, carrying an SPDX header, like the rest of the tree
+crates/rgx-core/src/djson/json_scan/tests.rs	json-scan-behaviour	the behavioural oracle and its corpus; retained as the test half of the module, unchanged. the stage-1 structural index: for a byte slice, one bit per byte saying whether that byte is a structural position and one saying whether it is a string delimiter, with escaped quotes excluded from both. Written from the behaviour, not from any source file: the oracle is json_scan/tests.rs, which carries a fourth implementation transcribed from RFC 8259 without looking at the other three, and every hostile input in the corpus is run through all four and compared bit for bit. The classification is a union of six rectangles of the high-nibble x low-nibble grid rather than one shuffle pair, because `,` (0x2C) and `:` (0x3A) are both structural and no single rectangle holds both without also selecting 0x2A; no rectangle lights a row above 7, which is what keeps every byte >= 0x80 OTHER by construction. Three implementations of the predicate (byte-at-a-time, portable 64-byte block algebra, AVX2) plus that oracle, held against each other over boundary sweeps at every offset across four block boundaries, every byte value 0..=255, backslash runs of every length, unterminated strings, multi-byte UTF-8 split across a boundary, and randomised escape-heavy input. Licensed Apache-2.0, carrying an SPDX header, like the rest of the tree
+
+# --- memchr: no longer vendored ----------------------------------------
+# The crates/rgx-core/src/memchr/ tree this section used to list (37 rows,
+# every one of them memchr/src/... at "master") is not in the tree. What is
+# there is crates/rgx-core/src/memchr.rs, a ten-line re-export of the
+# external memchr 2.x crate ("pub use ::memchr::*;"), which is an ordinary
+# dependency and not a copy of any upstream source file. The manifest is
+# for copies, and there are none here: the rows pointed at paths that do
+# not exist, which check-drift.ps1 reports as missing from the tree. They
+# are removed rather than repointed, because a row for a re-export would
+# claim a byte lineage the file does not have.
+
+# --- memmap2 (header: crates/rgx-core/src/memmap2/mod.rs, source RazrFalcon/memmap2-rs f16835d) ---
+# The memmap2-rs v0.9.0 public surface
+# (Mmap / MmapMut / MmapOptions / MmapAsRawDesc / MmapRawDescriptor / Advice /
+# UncheckedAdvice). Each file's `//!` header carries an `Independent
+# the upstream it was written from` provenance statement; the
+# check-vendoring.ps1 regex (also updated here) accepts the marker
+# alongside the legacy `vendored from` markers so the existing
+# vendored trees still pass.
+#
+# Public surface is byte-compatible with upstream memmap2 0.9.x in the
+# shape the rest of the tree reaches for: `Mmap::map(&file)`,
+# `MmapOptions::new().len(n).map(&file)`, `Mmap::deref()` -> `&[u8]`,
+# `unsafe impl Send + Sync`. The per-platform performance path is preserved
+# (Linux `mmap(2)`, macOS `mmap(2)`, Windows `CreateFileMappingW` +
+# `MapViewOfFile`); a `Vec<u8>` fallback covers `wasm32` and other
+# targets where neither syscall is available.
+#
+# Re-derived (no verbatim copies). Two intentional omissions: `MmapRaw`
+# (no caller in the tree) and `RemapOptions` / `remap(2)` (Linux-only and
+# unused). The vendoring manifest's notes column changes from `verbatim`
+# for the memmap2 rows.
+#
+# Upstream offered its work under MIT OR Apache-2.0. The Apache-2.0 option
+# is the one taken here: upstream's two licence files are not in this tree,
+# because no upstream source file is in it either. The attribution --
+# Copyright 2015 Dan Burkert, 2020 Yevhenii Reizner -- is in the tree-level
+# header of crates/rgx-core/src/memmap2/mod.rs and in the repository's NOTICE.
+crates/rgx-core/src/memmap2/mod.rs	memmap2/src/lib.rs	f16835d	Tree-level provenance header; `pub use` of upstream `crate::advice` / `crate::mmap` rewritten to `self::` because the file no longer lives at the crate root
+crates/rgx-core/src/memmap2/error.rs	memmap2/src/error.rs	f16835d	The local `Error` enum lifts non-OS failures (`LengthOverflow` / `OffsetBeyondFile`) into the `io::ErrorKind::InvalidData` the public surface hands out
+crates/rgx-core/src/memmap2/advice.rs	memmap2/src/advice.rs	f16835d	`Advice` / `UncheckedAdvice` re-derived from the typed `madvise(2)` surface; the seven Linux-only MADV_ values keep numeric fallbacks off-Linux and `advise` turns them down rather than handing over a number the kernel would read as something else -- the set is `LINUX_ONLY` in this file, the predicate that names it is `is_linux_only`, and the platform's own answer is `is_available`
+crates/rgx-core/src/memmap2/options.rs	memmap2/src/options.rs	f16835d	The setter methods return `&mut Self` (matching upstream), `map` / `map_mut` / `map_copy` stay `unsafe` for the same reason
+crates/rgx-core/src/memmap2/mmap.rs	memmap2/src/mmap.rs	f16835d	`unsafe impl Send + Sync` is the load-bearing unsafety -- the safety argument is in the module-level `//!` header
+crates/rgx-core/src/memmap2/mmap_mut.rs	memmap2/src/mmap_mut.rs	f16835d	`Deref` / `DerefMut` / `AsRef` / `AsMut` / `Debug` shape re-derived; the `make_read_only` / `make_exec` / `make_mut` transitions match upstream
+crates/rgx-core/src/memmap2/platform/mod.rs	memmap2/src/lib.rs	f16835d	The per-platform dispatch (linux / macos / freebsd / windows / fallback) is `#[cfg(target_os = "...")]` gated, no `works on everything` path; `refuse_unavailable` is the one place the three unix platforms turn down the advices they do not have
+crates/rgx-core/src/memmap2/platform/linux.rs	memmap2/src/unix.rs	f16835d	Linux's `MAP_POPULATE` / `MAP_STACK` are real constants; `mmap(2)` with non-aligned offset is folded into a page-aligned mapping; `advise` asks `refuse_unavailable` first, which on Linux refuses nothing because Linux has the seven
+crates/rgx-core/src/memmap2/platform/macos.rs	memmap2/src/unix.rs	f16835d	MacOS has no `MAP_POPULATE` / `MAP_STACK` -- the constructor takes them as `_populate` / `_stack` and silently ignores them, the same way upstream does; `advise` refuses the seven Linux-only advices before the syscall, because a number MacOS does not have is an instruction MacOS does have
+crates/rgx-core/src/memmap2/platform/freebsd.rs	memmap2/src/unix.rs	f16835d	FreeBSD's real mmap backend, structurally the macos.rs one (same BSD mmap(2) shapes); MAP_ANON is the canonical name bound here, MAP_ANONYMOUS being a header alias; `advise` refuses the seven Linux-only advices before the syscall -- FreeBSD's MADV_PROTECT is 10 and Linux's MADV_DONTFORK is 10 too
+crates/rgx-core/src/memmap2/platform/windows.rs	memmap2/src/windows.rs	f16835d	`CreateFileMappingW` + `MapViewOfFile` + `UnmapViewOfFile` + `CloseHandle`, inlined FFI; the FFI is declared inline rather than via `windows-sys` to keep the workspace free of another external dep
+crates/rgx-core/src/memmap2/platform/fallback.rs	memmap2/src/lib.rs	f16835d	`Vec<u8>`-backed "mapping" for targets without `mmap(2)` (e.g. `wasm32`); the public API is identical, the difference is the underlying memory is heap-allocated, not a kernel projection

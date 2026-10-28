@@ -1,0 +1,7 @@
+# Local fixtures (DIF/Lotus/MDB corpora) are downloaded by hand from
+# sembiance.com and mdbtools/mdbtestdata; they live in this directory
+# only when a developer runs the corpus pipeline. They are not source and
+# not committed: a CI run picks them up if a `scripts/fetch-legacy-corpus.sh`
+# step is added, but the binary fixtures themselves are git-ignored so a
+# clone stays small.
+*

@@ -1,0 +1,121 @@
+[package]
+name = "rgx-adapters-archive"
+version = "0.1.1"
+edition = "2021"
+authors = ["Dan Alec Yamaguchi <danalec@gmail.com>"]
+description = "rgx adapters: zip, tar, cpio, 7z, single-file decompressors"
+# Every file in this crate is Apache-2.0 and carries the SPDX header saying
+# so — the 7z tree, the tar reader and the LZ4 codec alike. The layout of
+# `borg.rs` and `pgdump.rs` was learned from third-party implementations,
+# which are the descriptions of those formats that exist; the code in both
+# is rgx's own. See the repository's COPYING.
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["archive", "zip", "tar", "7z", "rar"]
+categories = ["encoding", "filesystem"]
+repository = "https://github.com/danalec/rgx"
+# What the published crate carries. The test corpus is the repository's:
+# the fixtures under `testdata/` are what this crate's own tests read, and
+# a user of the crate has no use for them. The examples are one-off
+# diagnostics, not API demos. The licence and the notice are here because
+# they are the law on the code.
+include = [
+    "/src/**",
+    # The EGM contracts are the working documents of the review loop: they
+    # are gitignored, they are not source, and `/src/**` would have carried
+    # every one of them into the published crate. `exclude` cannot say it --
+    # cargo ignores the exclude list when an include list is there -- so the
+    # exclusion is a negation of the include.
+    "!/src/**/EGM.md",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE-APACHE",
+    "/NOTICE",
+]
+
+[features]
+# Every adapter answers one format, so every format gets one feature and a
+# user can name the formats they want. The default build is unchanged: it
+# carries `std` and all twenty-three families.
+default = [
+    "std",
+    "zip",
+    "sevenz",
+    "tar",
+    "cpio",
+    "ar",
+    "git-pack",
+    "git-bundle",
+    "svn-dump",
+    "decompress",
+    "rar",
+    "pgdump",
+    "borg",
+    "iso9660",
+    "raw-image",
+    "applefs",
+    "vhd",
+    "vhdx",
+    "qcow2",
+    "vmdk",
+    "vdi",
+    "wim",
+    "erofs",
+    "squashfs",
+]
+# `std` turns the environment on: the producer budget reads `std::env::var`
+# and the decompression adapter implements the `std::io::Read` shape the
+# zip-family callers feed. Every family lists it, so a build that carries a
+# format always carries it; a build with `std` alone carries the budget --
+# which is what `rgx-adapters-llm` and `rgx-adapters-office` ask for -- and
+# no format at all. With neither, the crate is `#![no_std] + alloc`.
+std = ["rar-codec?/std"]
+# Feature names declared so the vendored upstream compression sources keep their
+# original `cfg(feature = ...)` attributes byte-identical. `isa-huffman`
+# (ISA-L encoder acceleration) is declared but not vendored.
+isa-huffman = []
+# One family per adapter, in `adapters()` order.
+zip = ["std", "rgx-core/zip"]
+sevenz = ["std"]
+tar = ["std"]
+cpio = ["std"]
+ar = ["std"]
+git-pack = ["std", "rgx-core/zlib"]
+# A git bundle and a Subversion dump are read through the git-pack reader.
+git-bundle = ["std", "git-pack", "rgx-core/zlib"]
+svn-dump = ["std", "git-pack", "rgx-core/zlib"]
+# The decompressor is the only user of libzstd: it is the oracle the
+# in-house zstd decoder is measured against, and the fallback for the one
+# frame shape the in-house decoder declines.
+decompress = ["std", "dep:zstd", "rgx-core/gzip", "rgx-core/zlib", "rgx-core/bzip2", "rgx-core/xz", "rgx-core/lzma", "rgx-core/zstd"]
+# The RAR codec is the only user of `rar-codec`.
+rar = ["std", "dep:rar-codec"]
+pgdump = ["std"]
+borg = ["std", "rgx-core/lzma"]
+iso9660 = ["std"]
+# `.img` is not a format: the raw-dump adapter dispatches it to the ISO
+# reader and to the Apple readers, so those two come with it.
+raw-image = ["std", "iso9660", "applefs"]
+applefs = ["std"]
+vhd = ["std"]
+vhdx = ["std"]
+qcow2 = ["std"]
+vmdk = ["std"]
+vdi = ["std"]
+wim = ["std"]
+erofs = ["std"]
+squashfs = ["std", "rgx-core/lzma", "rgx-core/deflate", "rgx-core/xz", "rgx-core/zstd"]
+[dependencies]
+rgx-core = { path = "../rgx-core", version = "0.1.1", default-features = false, features = ["std", "sha256-hw"] }
+rar-codec = { path = "../rar-codec", version = "0.1.1", optional = true }
+zstd = { version = "0.14", optional = true }
+
+# The benches reach into the codecs the adapter registry does not expose, so
+# they are named with the features that carry them.
+[[example]]
+name = "crc32_bench_7z"
+required-features = ["sevenz"]
+
+[[example]]
+name = "decomp_bench"
+required-features = ["decompress", "sevenz"]

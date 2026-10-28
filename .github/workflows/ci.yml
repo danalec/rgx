@@ -1,0 +1,332 @@
+---
+name: CI
+
+# Gate every push/PR the same way scripts/build-release.ps1 gates a release:
+# the workspace stays warning-free, tests must pass, on all three OSes.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    # The gate runs for the owner and for the collaborators, and for nobody
+    # else. The repository is public, so the pull requests come from
+    # strangers, and the gate is four jobs over three operating systems:
+    # every one of them would spend the owner's minutes on code the owner
+    # never asked for. The repository's settings hold such a pull request
+    # for approval; this is the half that survives an approval given by
+    # accident.
+    #
+    # `author_association` says who opened the pull request. OWNER, MEMBER
+    # and COLLABORATOR are the ones with a key to the tree; CONTRIBUTOR,
+    # FIRST_TIME_CONTRIBUTOR and NONE are the strangers. A push is not
+    # gated: only someone with write access can push, and that someone is a
+    # collaborator by definition.
+    #
+    # The expression is on one line on purpose: a YAML folded scalar does
+    # not fold a line that is indented further than the first, and a
+    # newline inside an expression is not an expression the runner reads.
+    if: github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure lld-link is on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\Program Files\LLVM\bin") {
+            Add-Content $env:GITHUB_PATH "C:\Program Files\LLVM\bin"
+          }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+
+      - name: fmt
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --release --workspace --all-targets -- -D warnings
+
+      # The legacy-format integration suite reads a real corpus out of
+      # tests/fixtures/legacy-formats/, which is git-ignored, so a clean
+      # checkout has none. The tests panic when a fixture is missing rather
+      # than skipping (see the header of tests/legacy_formats.rs), so this
+      # step is not an optimisation: without it the gate goes red, which is
+      # the honest outcome for a suite that cannot verify its subject.
+      #
+      # Two external sources, neither owned by rgx: the mdbtools/mdbtestdata
+      # clone and the sembiance.com sample downloads. A fetch failure is
+      # tolerated here so a flaky third-party host does not take the whole
+      # matrix down; the test step below then fails on the missing fixtures
+      # and names the command to re-run.
+      - name: fetch legacy-format corpus
+        shell: bash
+        run: |
+          chmod +x scripts/fetch-legacy-corpus.sh
+          scripts/fetch-legacy-corpus.sh || echo "::warning::legacy corpus fetch failed; the test step will fail on the missing fixtures"
+          n=$(find tests/fixtures/legacy-formats -type f 2>/dev/null | wc -l | tr -d ' ')
+          echo "legacy corpus files present: $n"
+
+      # The parity suite in tests/cli.rs compares rgx against ripgrep, and it
+      # fails rather than skips when ripgrep is missing: a green run that
+      # compared nothing is the one result a parity suite must never have.
+      # The runner images do not carry ripgrep, and the distro's is too old
+      # -- the suite is written against rg 15, where `-L` means `--follow`,
+      # and against rg 13 it would be comparing two different flags. So the
+      # CI installs that version and puts it on the PATH of the steps that
+      # follow.
+      - name: Install ripgrep 15 (the parity suite compares against it)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          RG_VERSION: 15.0.0
+        run: |
+          case "${{ runner.os }}" in
+            Linux) target=x86_64-unknown-linux-musl ;;
+            macOS) target=aarch64-apple-darwin ;;
+          esac
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/rg.tar.gz" \
+            "https://github.com/BurntSushi/ripgrep/releases/download/$RG_VERSION/ripgrep-$RG_VERSION-$target.tar.gz"
+          tar -xzf "$work/rg.tar.gz" -C "$work"
+          mkdir -p "$HOME/bin"
+          cp "$work/ripgrep-$RG_VERSION-$target/rg" "$HOME/bin/rg"
+          chmod +x "$HOME/bin/rg"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          "$HOME/bin/rg" --version
+
+      - name: Install ripgrep 15 (the parity suite compares against it)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RG_VERSION: 15.0.0
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP "rg-$env:RG_VERSION"
+          $url = "https://github.com/BurntSushi/ripgrep/releases/download/$env:RG_VERSION/ripgrep-$env:RG_VERSION-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$work.zip"
+          Expand-Archive -Path "$work.zip" -DestinationPath $work -Force
+          $src = Join-Path $work "ripgrep-$env:RG_VERSION-x86_64-pc-windows-msvc"
+          $dest = Join-Path $env:RUNNER_TEMP "rg-bin"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item (Join-Path $src "rg.exe") (Join-Path $dest "rg.exe")
+          Add-Content $env:GITHUB_PATH $dest
+          & (Join-Path $dest "rg.exe") --version
+
+      # --workspace is load-bearing, not a nicety. Without it cargo builds
+      # the root `rgx` package only, because workspace_default_members is
+      # just that package: the 2,632 tests in the workspace -- including
+      # rgx-core's searcher oracle against the `regex` crate --
+      # would compile (clippy above sees them) and never run. An oracle
+      # failure lives exactly in the gap between "compiles" and "passes".
+      - name: test
+        run: cargo test --release --locked --workspace
+
+  # Engine-only build: no adapter crates, no optional deps. Catches
+  # the regression where a feature flag accidentally wires a transitive
+  # optional crate into the default-features path.
+  #
+  # The last two steps are the `no_std` gate, and they are the point of
+  # the job. The build above only proves that a build without the
+  # adapters compiles; it says nothing about the engine being `no_std`,
+  # because the root package asks `rgx-core` for its `std` feature
+  # whatever the root's own features are.
+  no-default-features:
+    name: no-default-features (${{ matrix.os }})
+    # The same gate as the check job: the owner and the collaborators, and nobody else.
+    if: github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure lld-link is on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\Program Files\LLVM\bin") {
+            Add-Content $env:GITHUB_PATH "C:\Program Files\LLVM\bin"
+          }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          # The target with no operating system under it. The step below
+          # builds the engine for it, and that build is the proof that
+          # the engine is `no_std`: a dependency that reaches for `std`
+          # does not fail to compile on a target that has none.
+          targets: x86_64-unknown-none
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+
+      - name: clippy (engine-only)
+        run: cargo clippy --release --no-default-features -- -D warnings
+
+      - name: build (engine-only)
+        run: cargo build --release --no-default-features
+
+      # The engine's own suite, in the configuration an embedder gets.
+      # Without this the `no_std` configuration is compiled and never
+      # run, and a test that only the `std` configuration passes is a
+      # test that says nothing about the build it is meant to cover.
+      - name: test (engine-only, no_std)
+        run: cargo test --release --locked -p rgx-core --no-default-features --lib
+
+      # The proof that the `no_std` build is `no_std`. A target with no
+      # operating system has no `std` to link, so any crate in the graph
+      # that says `extern crate std` -- directly or through a feature
+      # someone forgot was on -- fails here and nowhere else.
+      - name: build (no_std target)
+        run: cargo build --release --locked -p rgx-core --no-default-features --target x86_64-unknown-none
+
+      # The hardware SHA-256 path is a feature of its own and it is not a
+      # `std` feature: it used to ask the CPU with
+      # `std::arch::is_x86_feature_detected!`, which put `std` into a build
+      # that asks for `no_std` -- and the combination did not compile at all.
+      # The engine-only build above does not see it, because `sha256-hw` is
+      # off there; this step is the one that sees it.
+      - name: build (engine-only, sha256-hw)
+        run: cargo build --release --locked -p rgx-core --no-default-features --features sha256-hw
+
+      # The same combination on the bare-metal target, which is the one that
+      # would catch a `std` that crept back in.
+      - name: build (no_std target, sha256-hw)
+        run: cargo build --release --locked -p rgx-core --no-default-features --features sha256-hw --target x86_64-unknown-none
+
+      # The codecs on the bare-metal target. The engine-only build above
+      # has no codec in it, so a codec that reached for `std` would not
+      # fail there -- and an embedder asking for `--features gzip,zip`
+      # gets exactly that graph.
+      - name: build (no_std target, codecs)
+        run: cargo build --release --locked -p rgx-core --no-default-features --features gzip,zlib,deflate,bzip2,lzma,xz,zstd,snappy,lz4,blosc,zip --target x86_64-unknown-none
+
+      # The hardware SHA-256 path, *run* and not only built. The build
+      # above proves it compiles without `std`; this proves the kernel
+      # still matches the scalar one in that configuration, which is the
+      # only way to know the feature did not quietly change the answer.
+      - name: test (engine-only, no_std, sha256-hw)
+        run: cargo test --release --locked -p rgx-core --no-default-features --features sha256-hw --lib
+
+  # A narrow build: the formats a user names, and nothing else. The point
+  # is not speed -- it is that a build without `format-zip` must not carry
+  # the zip reader, and that the feature table and the binary's own report
+  # agree. The last step checks the report.
+  narrow:
+    name: narrow build (${{ matrix.os }})
+    # The same gate as the check job: the owner and the collaborators, and nobody else.
+    if: github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure lld-link is on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\Program Files\LLVM\bin") {
+            Add-Content $env:GITHUB_PATH "C:\Program Files\LLVM\bin"
+          }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+
+      - name: clippy (narrow)
+        run: cargo clippy --release --locked --no-default-features --features format-zip,format-pdf,format-grib -- -D warnings
+
+      - name: build (narrow)
+        run: cargo build --release --locked --no-default-features --features format-zip,format-pdf,format-grib
+
+      # The binary reports the formats it carries, read from the features
+      # themselves. A build that lost a format, or gained one, says so here
+      # instead of at the first search that does not find anything.
+      - name: the binary reports the formats it carries
+        shell: bash
+        run: |
+          out=$(cargo run --release --quiet --no-default-features --features format-zip,format-pdf,format-grib -- --version)
+          echo "$out"
+          echo "$out" | grep -q '^formats: grib, pdf, zip$' || {
+            echo "::error::the narrow build does not report exactly the three formats it was built with"
+            exit 1
+          }
+
+  # mimalloc variant. Off by default (the median gain is small and the
+  # variance is large on the bench machine) but the flag exists and a
+  # build break or test regression on the opt-in path needs catching.
+  mimalloc:
+    name: mimalloc
+    # The same gate as the check job: the owner and the collaborators, and nobody else.
+    if: github.event_name != 'pull_request' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+
+      # Same corpus, same reason as the check job: the legacy-format tests
+      # fail rather than skip when a fixture is missing.
+      - name: fetch legacy-format corpus
+        shell: bash
+        run: |
+          chmod +x scripts/fetch-legacy-corpus.sh
+          scripts/fetch-legacy-corpus.sh || echo "::warning::legacy corpus fetch failed; the test step will fail on the missing fixtures"
+
+      # The parity suite compares against ripgrep, for the reason the check
+      # job's step says: the suite fails rather than skips when it is
+      # missing, and the version it is written against is rg 15.
+      - name: Install ripgrep 15 (the parity suite compares against it)
+        shell: bash
+        env:
+          RG_VERSION: 15.0.0
+        run: |
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/rg.tar.gz" \
+            "https://github.com/BurntSushi/ripgrep/releases/download/$RG_VERSION/ripgrep-$RG_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          tar -xzf "$work/rg.tar.gz" -C "$work"
+          mkdir -p "$HOME/bin"
+          cp "$work/ripgrep-$RG_VERSION-x86_64-unknown-linux-musl/rg" "$HOME/bin/rg"
+          chmod +x "$HOME/bin/rg"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          "$HOME/bin/rg" --version
+
+      - name: test (mimalloc)
+        run: cargo test --release --locked --workspace --features mimalloc

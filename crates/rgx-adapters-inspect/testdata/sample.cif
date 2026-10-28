@@ -1,0 +1,32 @@
+data_1ABC
+#
+_entry.id   1ABC
+_entry.title   'A small structure used as a fixture'
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+ATOM 1 N N MET A 1 11.104 13.207 10.000 1.00 20.00 ?
+ATOM 2 C CA MET A 1 11.639 13.792 10.000 1.00 20.00 ?
+ATOM 3 C C MET A 1 12.104 14.207 10.000 1.00 20.00 ?
+ATOM 4 O O MET A 1 12.639 14.792 10.000 1.00 20.00 ?
+ATOM 5 N N ALA A 2 12.104 15.207 10.000 1.00 21.00 ?
+ATOM 6 C CA ALA A 2 12.639 15.792 10.000 1.00 21.00 ?
+#
+_struct.title
+;
+A title written as a semicolon block,
+which spans three lines and holds punctuation: ; and '.
+;
+#

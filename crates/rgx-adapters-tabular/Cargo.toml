@@ -1,0 +1,95 @@
+[package]
+name = "rgx-adapters-tabular"
+version = "0.1.1"
+edition = "2021"
+authors = ["Dan Alec Yamaguchi <danalec@gmail.com>"]
+description = "rgx adapters for tabular & geospatial data (SQLite, DBF, Shapefile)"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["sqlite", "netcdf", "hdf5", "dbf", "parquet"]
+categories = ["parser-implementations", "database-implementations"]
+repository = "https://github.com/danalec/rgx"
+# What the published crate carries. The test corpus is the repository's:
+# the fixtures under `testdata/` are what this crate's own tests read, and
+# a user of the crate has no use for them. The examples are one-off
+# diagnostics, not API demos. The licence and the notice are here because
+# they are the law on the code.
+include = [
+    "/src/**",
+    # The EGM contracts are the working documents of the review loop: they
+    # are gitignored, they are not source, and `/src/**` would have carried
+    # every one of them into the published crate. `exclude` cannot say it --
+    # cargo ignores the exclude list when an include list is there -- so the
+    # exclusion is a negation of the include.
+    "!/src/**/EGM.md",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE-APACHE",
+    "/NOTICE",
+]
+
+[features]
+# One feature per format, in the order `adapters()` lists them, so a
+# binary can name the formats it reads and leave the rest out.
+#
+# The SQLite adapter drives rusqlite (which is std-only) and the DuckDB
+# and Zarr readers write into a `Vec<u8>` or walk the filesystem, so
+# those three need `std`. The hand-rolled readers for the other formats
+# are pure byte slicing and stay no_std + alloc.
+#
+# `default` turns every format on, so the default build still reads every
+# format this crate knows.
+default = [
+    "std",
+    "sqlite",
+    "duckdb",
+    "foxpro",
+    "dbf",
+    "slk",
+    "dif",
+    "lotus",
+    "mdb",
+    "lmdb",
+    "shp",
+    "parquet",
+    "eri",
+    "matv5",
+    "netcdf3",
+    "arrow",
+    "hdf5",
+    "bson",
+    "redis-rdb",
+    "redis-aof",
+    "leveldb",
+    "zarr",
+]
+std = ["dep:rusqlite"]
+sqlite = ["std"]
+duckdb = ["std"]
+foxpro = []
+dbf = []
+slk = []
+dif = []
+lotus = []
+mdb = []
+lmdb = []
+shp = []
+parquet = []
+eri = []
+matv5 = ["rgx-core/zlib"]
+netcdf3 = ["rgx-core/gzip"]
+arrow = []
+hdf5 = ["rgx-core/zlib"]
+bson = []
+redis-rdb = []
+# The AOF reader renders the RDB preamble that opens a rewritten log, so
+# it needs the RDB walker.
+redis-aof = ["redis-rdb"]
+leveldb = ["rgx-core/snappy"]
+zarr = ["std", "rgx-core/blosc", "rgx-core/bzip2", "rgx-core/gzip", "rgx-core/zlib", "rgx-core/zstd"]
+[dependencies]
+rgx-core = { path = "../rgx-core", version = "0.1.1", default-features = false, features = ["std", "sha256-hw"] }
+rusqlite = { version = "0.40", features = ["bundled", "serialize"], optional = true }
+
+# Parquet is covered by a hand-rolled Thrift-compact footer reader above —
+# no arrow/parquet stack, keeping with the "fast and extremely light" rule.

@@ -1,0 +1,49 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources 4 0 R /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Font << /F1 8 0 R /F2 6 0 R >> >>
+endobj
+5 0 obj
+<< /Length 99 >>
+stream
+BT /F2 12 Tf 20 150 Td <51 61 62 52> Tj ET
+BT /F1 14 Tf 20 100 Td (Valve the Tesla regulator) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type3 /FontBBox [0 0 60 40] /FontMatrix [0.01 0 0 0.01 0 0] /CharProcs << /a97 7 0 R /a98 7 0 R >> /Encoding << /Type /Encoding /Differences [ 97 /a97 98 /a98 ] >> /FirstChar 97 /LastChar 98 /Widths [1000 1000] /Resources << >> >>
+endobj
+7 0 obj
+<< /Length 21 >>
+stream
+10 w 0 0 0 60 40 re f
+endstream
+endobj
+8 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000225 00000 n 
+0000000278 00000 n 
+0000000427 00000 n 
+0000000698 00000 n 
+0000000769 00000 n 
+trailer
+<< /Size 9 /Root 1 0 R >>
+startxref
+866
+%%EOF

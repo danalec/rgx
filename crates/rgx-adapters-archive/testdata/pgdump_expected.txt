@@ -1,0 +1,10 @@
+COPY public.auditoria (id, evento, quando) FROM stdin;
+1	login	\N
+2	logout	\N
+\.
+
+COPY public.clientes (id, nome, email, notas, criado) FROM stdin;
+1	Ana Souza	ana@example.com	RGX PGDUMP PROVA LINHA UM	2026-10-19 14:01:23.988996+00
+2	Bruno Lima	bruno@example.com	contrato assinado	2026-10-19 14:01:23.988996+00
+3	Carla Dias	carla@example.com	nota RGX PGDUMP segunda ocorrencia	2026-10-19 14:01:23.988996+00
+\.

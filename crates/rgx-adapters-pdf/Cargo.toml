@@ -1,0 +1,45 @@
+[package]
+name = "rgx-adapters-pdf"
+version = "0.1.1"
+edition = "2021"
+authors = ["Dan Alec Yamaguchi <danalec@gmail.com>"]
+description = "rgx in-process PDF text adapter (full: classic xref + xref streams + ObjStm + CID fonts via ToUnicode CMaps + full filter zoo)"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["pdf", "text-extraction", "document"]
+categories = ["parser-implementations", "text-processing"]
+repository = "https://github.com/danalec/rgx"
+# What the published crate carries. The test corpus is the repository's:
+# the fixtures under `testdata/` are what this crate's own tests read, and
+# a user of the crate has no use for them. The examples are one-off
+# diagnostics, not API demos. The licence and the notice are here because
+# they are the law on the code.
+include = [
+    "/src/**",
+    # The EGM contracts are the working documents of the review loop: they
+    # are gitignored, they are not source, and `/src/**` would have carried
+    # every one of them into the published crate. `exclude` cannot say it --
+    # cargo ignores the exclude list when an include list is there -- so the
+    # exclusion is a negation of the include.
+    "!/src/**/EGM.md",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE-APACHE",
+    "/NOTICE",
+]
+
+[features]
+# One feature per adapter, and this crate holds exactly one adapter:
+# `Pdf`. Everything the reader needs -- the classic xref reader, the
+# xref-stream and ObjStm reader, the CID font reader, the fax decoder,
+# the security handler and the page-image rasteriser -- is private to
+# that adapter, so `pdf` gates the whole reader and
+# `--no-default-features` leaves a crate with no adapter at all.
+#
+# The crate is `#![no_std]` + `alloc`: it never needs `std`, so there is
+# no `std` feature to declare here.
+default = ["pdf"]
+pdf = []
+
+[dependencies]
+rgx-core = { path = "../rgx-core", version = "0.1.1", default-features = false, features = ["std", "sha256-hw"] }

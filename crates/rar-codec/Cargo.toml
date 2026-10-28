@@ -1,0 +1,38 @@
+[package]
+name = "rar-codec"
+version = "0.1.1"
+edition = "2021"
+authors = ["Dan Alec Yamaguchi <danalec@gmail.com>"]
+description = "Pure-Rust, no_std RAR codec: RAR4/RAR5 parsing, LZ+Huffman and PPMd decode (solid, multivolume, VM filters), RAR5 store encode. Zero dependencies."
+# Every file in this crate is Apache-2.0 and carries the SPDX header saying
+# so, the crate root included. See the repository's COPYING, and its NOTICE
+# for the libarchive lineage the crate was born from.
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["rar", "codec", "archive", "compression"]
+categories = ["encoding", "compression"]
+repository = "https://github.com/danalec/rgx"
+
+# What the published crate carries. The test corpus is the repository's:
+# the fixtures under `testdata/` are what this crate's own tests read, and
+# a user of the crate has no use for them. The licence and the notice are
+# here because they are the law on the code.
+include = [
+    "/src/**",
+    # The EGM contracts are the working documents of the review loop: they
+    # are gitignored, they are not source, and `/src/**` would have carried
+    # every one of them into the published crate. `exclude` cannot say it --
+    # cargo ignores the exclude list when an include list is there -- so the
+    # exclusion is a negation of the include.
+    "!/src/**/EGM.md",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE-APACHE",
+    "/NOTICE",
+]
+
+[features]
+default = []
+# `std` only relaxes nothing critical today; reserved for future IO adapters.
+std = []
+

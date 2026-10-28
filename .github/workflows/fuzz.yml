@@ -1,0 +1,86 @@
+name: Fuzz
+
+# Coverage-guided fuzzing of the full adapter registry, on a schedule.
+#
+# `crates/rgx-core/fuzz` drives `process` -- the whole registry, so input
+# flows through the real parsers rather than an isolated codec. It needs
+# nightly (cargo-fuzz) and clang (libfuzzer), neither of which the main
+# gate uses.
+#
+# Scheduled rather than per-push on purpose: a bounded run finds panics,
+# and a growing corpus is the point. Each run seeds from the committed
+# corpus and the previous run's artifacts, so a crash found once keeps
+# being replayed. A job that only runs when someone remembers is a job
+# that finds nothing.
+
+on:
+  schedule:
+    # Weekly, Tuesday 06:17 UTC. Off the hour so it does not contend
+    # with every other scheduled workflow that fires at :00.
+    - cron: "17 6 * * 2"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "minutes to fuzz for"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: process
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nightly with the fuzzing prerequisites
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Ensure clang is present
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Cache cargo and the fuzz corpus
+        uses: swatinem/rust-cache@v2
+        with:
+          # cargo-fuzz keeps its target under fuzz/target; the corpus is
+          # the thing worth carrying between runs, so a crash found in
+          # one run is replayed in the next.
+          workspaces: |
+            .
+            crates/rgx-core/fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # Bounded by wall clock, not by finding something. A run that
+      # stops when it finds a crash is a run that stops at the first
+      # panic and never explores past it; `-max_total_time` keeps going
+      # and leaves the input in the corpus.
+      - name: Fuzz the registry
+        working-directory: crates/rgx-core/fuzz
+        run: |
+          MINUTES="${{ github.event.inputs.minutes || '10' }}"
+          cargo +nightly fuzz run process -- -max_total_time=$((MINUTES * 60))
+
+      # The corpus is the output that matters. Uploading it means the
+      # next run starts from everything this one reached, which is the
+      # whole point of a growing corpus.
+      - name: Upload the corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ github.run_id }}
+          path: crates/rgx-core/fuzz/corpus/process
+          if-no-files-found: ignore
+          retention-days: 90

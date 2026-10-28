@@ -1,0 +1,101 @@
+Licensing
+
+rgx is licensed under the **Apache License, Version 2.0** (Apache-2.0), and
+under nothing else. There is no second option to choose from: rgx's own code
+is Apache-2.0, and the per-file SPDX header says so.
+
+    a file headed `SPDX-License-Identifier: Apache-2.0`  is Apache-2.0
+
+Every tracked `.rs` file carries an SPDX header, and the audit that holds
+the claim up is `tests/cli.rs::every_file_carries_its_spdx_header`, which
+reads the file list out of git and fails on the first file that carries a
+different licence or none at all. Every package in the workspace declares
+`license = "Apache-2.0"` to the same effect.
+
+There is no exception to that rule. Where a file implements a layout that
+was learned from somebody else's implementation — the borg segment, the
+PostgreSQL custom dump, the Redis RDB table, the LMDB meta page, the ACIS
+SAT records — what came across is the *layout*: which bytes sit where, and
+what they encode. That is a fact about a file format, and no upstream's
+licence travels with a fact. The code that encodes it was written here, in
+this tree's idiom, and it is held against the corpora each format's own
+producer writes. `NOTICE` names every upstream, so a reader who wants to
+follow the lineage can.
+
+Why one license
+----------------
+
+Apache-2.0 was chosen for the whole tree, and the pack store is where the
+decision started: it is the distinctive, independently valuable subsystem of
+this project, and Apache-2.0 carries an express patent grant and an explicit
+limitation of liability. The codecs that sit under it inherited the same
+licence, and when the rest of the tree joined it there was nothing left
+under a second one.
+
+The MIT option that used to sit beside it is gone. A project that ships one
+licence has one answer to give a reader who asks "under what terms may I use
+this?", and "Apache-2.0" is the answer.
+
+What this covers
+----------------
+
+    the engine, the walker, the CLI, the recursion pipeline
+    every adapter, in every crate under crates/
+    the pack store (rgx-core/src/tv/, rgx-core/src/tv_runtime/)
+    the compression codecs (rgx-core/src/compress/, the 7z, LZ4 and RAR
+    codecs), the zip reader, the base64 and SHA-256 codecs
+    the TIFF/EXIF parser and the argument-parser layer
+    the tests, the benchmarks, the scripts
+
+Consequence for the distributed binaries
+----------------------------------------
+
+The `rgx` binary is built with the pack-store engine linked in by default,
+and `rgx-tv` is that engine's own CLI. The default build links the adapter
+crates too, and those are Apache-2.0 like the rest of the tree, so the
+binary is Apache-2.0 code — plus the Rust dependencies it links, each of
+which carries its own permissive licence. Those are notices, not obligations
+on this code, and they are named in [`NOTICE`](NOTICE).
+
+Disabling the pack store does not change the licence, only the size of the
+binary: `--no-default-features` turns off the `tv` and `tv-runtime` features,
+but the codecs, the zip reader and the CLI layer are linked into any build of
+`rgx-core`.
+
+What this does not cover
+------------------------
+
+Four things in and around this repository are not rgx's code:
+
+  * **The dependencies.** Each crate in `Cargo.lock` carries its own licence.
+    They are notices, not obligations on this code, and the set is named in
+    [`NOTICE`](NOTICE).
+
+  * **The test fixtures.** The corpora under `crates/*/testdata/` are real
+    files, taken from the reference implementations of the formats they
+    exercise rather than written by hand, and each is covered by its own
+    project's licence — BSD-3-Clause for most of them, Apache-2.0 for the
+    HPGL-Plotter capture, and the terms of their own projects for the rest.
+    The README of each fixture directory says which file came from which
+    project and what its terms are. They are data, not code, and none of
+    them carries a licence obligation on this code.
+
+  * **The lineage.** The 7z tree was written from the LZMA SDK, which its
+    publisher placed in the public domain; the RAR codec was originally a
+    port of libarchive's RAR support (BSD-2-Clause) and every module of it
+    has since been rewritten. No upstream source file from either lineage
+    remains in this repository. Both lineages are recorded in
+    `scripts/vendored-sources.tsv` and in `NOTICE`.
+
+  * **The layouts.** Five files implement a layout that was learned from a
+    third-party implementation: the borg segment, the PostgreSQL custom dump,
+    the Redis RDB type table, the LMDB meta page and the ACIS SAT records.
+    What was taken is the layout, and the code is rgx's own; each upstream is
+    named in `NOTICE`.
+
+The *format specifications* the adapters implement are separate works with
+their own terms — ITU-T, ISO/IEC, NIST, MIL-STD, W3C/OASIS and others. This
+repository implements them; it does not redistribute them, and it grants no
+rights in them.
+
+Full text: LICENSE-APACHE. Provenance and third-party notices: NOTICE.

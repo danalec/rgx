@@ -1,0 +1,305 @@
+---
+name: Release
+
+# Matrix release builds in the spirit of LizardByte/yoko: one job per
+# platform artifact, all attached to the GitHub release for the pushed tag.
+#
+#   git tag rgx-v0.1.1 && git push origin rgx-v0.1.1   # builds + publishes
+#
+# Asset names follow the forgejo convention (scripts/build-release.ps1):
+#   rgx-v<version>-<asset>.<zip|tar.gz>
+
+on:
+  push:
+    tags: ["rgx-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- Windows ---
+          - asset: x86_64-windows
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            archive: zip
+          - asset: znver4-windows
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            rustflags: "-C target-cpu=znver4"
+            archive: zip
+          - asset: aarch64-windows
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            archive: zip
+
+          # --- Linux ---
+          # The Linux binaries are built inside the bullseye image, the same
+          # one scripts/build-linux.sh uses, and not on the runner: glibc 2.31
+          # is the floor the .deb and the release notes promise. The runner's
+          # own image is newer than that -- ubuntu-24.04 carries glibc 2.39 --
+          # and a binary linked against it does not run on the bookworm and
+          # ubuntu-20.04 containers the packages job verifies the install in.
+          # The build_image field is what marks an entry as one of these.
+          - asset: x86_64-linux-gnu
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+            build_image: rust:1.98-slim-bullseye
+          - asset: znver4-linux
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            rustflags: "-C target-cpu=znver4"
+            archive: tar.gz
+            build_image: rust:1.98-slim-bullseye
+          - asset: x86_64-linux-musl
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            archive: tar.gz
+            build_image: rust:1.98-slim-bullseye
+          - asset: aarch64-linux
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            archive: tar.gz
+            build_image: rust:1.98-slim-bullseye
+
+          # --- macOS (both arches build on the arm64 runner; the macOS SDK
+          #     ships both stdlib variants, cross-linking is native to it) ---
+          - asset: aarch64-macos
+            os: macos-15
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - asset: x86_64-macos
+            os: macos-15
+            target: x86_64-apple-darwin
+            archive: tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#rgx-v}"
+          else
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "name=rgx-v${version}-${{ matrix.asset }}" >> "$GITHUB_OUTPUT"
+
+      # .cargo/config.toml links Windows with lld-link; the runner image
+      # ships LLVM, it just needs to be on PATH before cargo runs.
+      - name: Ensure lld-link is on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\Program Files\LLVM\bin") {
+            Add-Content $env:GITHUB_PATH "C:\Program Files\LLVM\bin"
+          }
+
+      # The musl tools, the Rust toolchain and the cargo cache belong to the
+      # host build. The entries that build inside the image bring their own
+      # toolchain (rust 1.98, the image's) and write to their own volume, so
+      # none of these three steps applies to them.
+      - name: Install musl tools (Linux musl)
+        if: matrix.build_image == null && matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install Rust toolchain
+        if: matrix.build_image == null
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        if: matrix.build_image == null
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        if: matrix.build_image == null
+        shell: bash
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # The Linux build, inside the image that holds the glibc floor. The
+      # target directory is a named volume of its own, so the generic build
+      # and the znver4 one never share a cache -- cargo's fingerprint does
+      # not know about the image, and a build made elsewhere would be taken
+      # for a fresh one.
+      - name: Build (Linux, in the glibc-floor image)
+        if: matrix.build_image != null
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD":/src -w /src \
+            -v "rgx-target-${{ matrix.asset }}":/src/target \
+            "${{ matrix.build_image }}" bash -c "
+              set -eo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              if [ '${{ matrix.target }}' = 'x86_64-unknown-linux-musl' ]; then
+                apt-get update -qq >/dev/null
+                apt-get install -y -qq musl-tools >/dev/null
+                for i in 1 2 3 4 5; do
+                  rustup target add ${{ matrix.target }} >/dev/null 2>&1 && break
+                  echo \"rustup retry \$i\"; sleep 5
+                  [ \$i = 5 ] && { echo 'rustup target add failed'; exit 1; }
+                done
+              fi
+              if [ -n '${{ matrix.rustflags }}' ]; then export RUSTFLAGS='${{ matrix.rustflags }}'; fi
+              cargo build --release --locked --target ${{ matrix.target }} > /tmp/cargo.log 2>&1 || { cat /tmp/cargo.log; exit 1; }
+              tail -1 /tmp/cargo.log"
+
+      - name: Stage package (binary + legal/docs)
+        shell: bash
+        run: |
+          pkg="${{ steps.meta.outputs.name }}"
+          mkdir -p ".dist/$pkg"
+          cp README.md COPYING LICENSE-APACHE NOTICE ".dist/$pkg/"
+          if [ -n "${{ matrix.build_image }}" ]; then
+            # The binary was built inside the image: it comes out of the
+            # named volume the build wrote into.
+            docker run --rm \
+              -v "rgx-target-${{ matrix.asset }}":/t \
+              -v "$PWD/.dist/$pkg":/out \
+              "${{ matrix.build_image }}" \
+              bash -c "cp /t/${{ matrix.target }}/release/rgx /out/rgx"
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            cp "target/${{ matrix.target }}/release/rgx.exe" ".dist/$pkg/"
+          else
+            cp "target/${{ matrix.target }}/release/rgx" ".dist/$pkg/"
+          fi
+
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        working-directory: .dist
+        run: Compress-Archive -Path "${{ steps.meta.outputs.name }}" -DestinationPath "${{ steps.meta.outputs.name }}.zip"
+
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        working-directory: .dist
+        run: tar -czf "${{ steps.meta.outputs.name }}.tar.gz" "${{ steps.meta.outputs.name }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.name }}
+          path: .dist/${{ steps.meta.outputs.name }}.*
+          if-no-files-found: error
+          # .dist is a hidden directory, and the action skips hidden files
+          # unless it is told otherwise: without this the upload finds
+          # nothing and the job fails on the archive it just built.
+          include-hidden-files: true
+
+  # Distro packages (deb/rpm/apk/pacman) from the linux binaries, each
+  # install-verified in its own distro container. Runs the same
+  # scripts/package-linux.sh as the local pipeline, so CI and local
+  # releases cannot drift apart.
+  packages:
+    name: Distro packages
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .dist
+          pattern: rgx-v*-linux*
+          merge-multiple: true
+
+      - name: Extract binaries
+        shell: bash
+        run: |
+          mkdir -p bins
+          for variant in x86_64-linux-gnu x86_64-linux-musl znver4-linux; do
+            tar -xzf ".dist/rgx-v${VERSION}-$variant.tar.gz" -C bins \
+              "rgx-v${VERSION}-$variant/rgx" 2>/dev/null || true
+            mv "bins/rgx-v${VERSION}-$variant/rgx" "bins/rgx-$variant"
+            rm -rf "bins/rgx-v${VERSION}-$variant"
+          done
+          chmod +x bins/*
+          ls -la bins/
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+
+      - name: Package + verify (fpm, one container per distro)
+        shell: bash
+        run: |
+          scripts/package-linux.sh . \
+            "bins/rgx-x86_64-linux-gnu" \
+            "bins/rgx-x86_64-linux-musl" \
+            "bins/rgx-znver4-linux" \
+            "$VERSION" packages
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgx-distro-packages
+          path: |
+            packages/*.deb
+            packages/*.rpm
+            packages/*.apk
+            packages/*.pkg.tar.zst
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [build, packages]
+    runs-on: ubuntu-24.04
+    steps:
+      # The release is published by scripts/push-github.sh, with the assets the
+      # local pipeline built and install-verified, and the winget manifest
+      # names the hash of that windows zip. A CI publish would replace those
+      # assets with ones nobody verified here -- and with a windows zip of
+      # another hash, which is a manifest that installs nothing. So the CI
+      # publishes only when there is no release yet.
+      - name: Does the release already exist?
+        id: existing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo ">> release $GITHUB_REF_NAME is already published: keeping it"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download artifacts
+        if: steps.existing.outputs.exists == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          path: .dist
+          merge-multiple: true
+
+      - name: Publish release
+        if: steps.existing.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: ${{ github.ref_type != 'tag' }}
+          generate_release_notes: true
+          files: .dist/*

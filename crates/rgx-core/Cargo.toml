@@ -1,0 +1,177 @@
+[package]
+name = "rgx-core"
+version = "0.1.1"
+edition = "2021"
+authors = ["Dan Alec Yamaguchi <danalec@gmail.com>"]
+description = "rgx's engine: the adapter contract, the byte-search kernels, the JSON arena and the pack store -- no_std + alloc, with an opt-in std feature"
+# Every file in this crate is Apache-2.0 and carries the SPDX header saying
+# so — the pack store, the compression codecs and the JSON layer alike. See
+# the repository's COPYING.
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["search", "regex", "engine", "ripgrep"]
+categories = ["text-processing", "command-line-utilities"]
+repository = "https://github.com/danalec/rgx"
+# What the published crate carries. The test corpus is the repository's:
+# the fixtures under `testdata/` are what this crate's own tests read, and
+# a user of the crate has no use for them. The examples are one-off
+# diagnostics, not API demos. The licence and the notice are here because
+# they are the law on the code.
+include = [
+    "/src/**",
+    # The EGM contracts are the working documents of the review loop: they
+    # are gitignored, they are not source, and `/src/**` would have carried
+    # every one of them into the published crate. `exclude` cannot say it --
+    # cargo ignores the exclude list when an include list is there -- so the
+    # exclusion is a negation of the include.
+    "!/src/**/EGM.md",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE-APACHE",
+    "/NOTICE",
+]
+
+[features]
+# rgx-core is `#![no_std]` + `alloc`; this feature decides what else it may
+# use. It used to claim the opposite -- "always std" -- while carrying a
+# `std` feature nothing gated, so `cargo build --no-default-features` still
+# linked std and proved nothing.
+#
+# With `std` off: the vector kernels stay -- they are chosen at runtime by
+# this crate's own CPU probe (`src/detect.rs`), which is why the `std` build
+# and the `no_std` build reach the same kernel on the same machine and the
+# two configurations' numbers are comparable; `Error` keeps messages but
+# loses the typed `dyn Error` chain; the profiler's global map goes and its
+# flag, a core atomic, stays; and the JSON float parser becomes this crate's
+# own, since `f64::from_str` is std-only.
+default = ["std", "sha256-hw", "gzip", "zlib", "deflate", "bzip2", "lzma", "xz", "zstd", "snappy", "lz4", "blosc", "zip"]
+std = ["dep:libc", "memchr/std"]
+# The Tesla Valve pack store's codec, query vocabulary and planner. The
+# algorithmic half of `crates/rgx-tv`, held here so it can be `no_std` and so
+# `rgx` can take it without taking the thread pool with it. `rgx-tv` turns
+# this on; nothing else does, because a binary that does not read a pack
+# store should not link its format tables.
+# The in-house codecs, one feature each. `default` keeps every one of them,
+# so a plain dependency on this crate is unchanged and the crate's own test
+# count does not move; the point of the feature is that the CONSUMER names
+# the codec it needs, so a binary that carries the zip reader does not carry
+# the zstd decoder. The adapter crate that reads the format is what names
+# it -- the user names formats, not codecs.
+#
+# The codec that only exists to serve another codec is not a name of its
+# own: `gzip` needs `deflate`, and `deflate` needs `huffman` and `lz77`.
+gzip = ["deflate"]
+zlib = ["deflate"]
+deflate = ["huffman", "lz77"]
+bzip2 = ["huffman", "bwt"]
+lzma = []
+xz = ["lzma"]
+zstd = []
+snappy = []
+lz4 = []
+# The blosc frame reader, and the codecs the frame's own enumeration names:
+# blosclz (the library's own, decoded here), lz4, snappy, zlib and zstd. A
+# binary that reads no blosc frame carries no blosc codec either.
+blosc = ["lz4", "snappy", "zlib", "zstd"]
+# The ZIP reader, and the five compression methods the format
+# defines: deflate, bzip2, lzma, xz and zstd. A binary that reads no
+# zip archive carries no zip codec either.
+zip = ["deflate", "bzip2", "lzma", "xz", "zstd"]
+# The three codecs that only another codec uses. They are features so the
+# gating can be written the same way everywhere, but nothing names them
+# directly.
+huffman = []
+lz77 = []
+bwt = []
+
+tv = []
+# The std-bound half of `crates/rgx-tv`: filesystem wrappers for the
+# format tables, the inspector, the builder, the searcher and the store.
+# NOT in `default` -- `default` is the engine and its codecs, and it carries
+# no pack store. `rgx-tv` turns it on; nothing else does, because a binary
+# that does not read a pack store should not link its format tables. The
+# engine alone, with no pack store, is `--no-default-features --features std`
+# (AVX2/SWAR + regex core).
+tv-runtime = ["tv", "std", "dep:ignore"]
+# SHA-256 hardware acceleration. It is in `default` above, and the path it
+# turns on replaces the scalar one rather than answering differently. One
+# backend is wired: SHA-NI on x86_64, detected at runtime by this crate's own
+# CPU probe (`src/detect.rs`) -- not by `std::arch::is_x86_feature_detected!`,
+# which lives in `std` while this feature does not require `std`, so asking it
+# here put `std` into a build that asks for `no_std` and the combination did
+# not compile at all. No aarch64 backend exists: reporting the extension as
+# available would make `hardware_available()` claim a backend that
+# `compress_block` does not have, and the benchmark would print "Available:
+# true" next to a 1.00x ratio measured against the scalar it silently fell
+# back to. When the feature is on but the runtime lacks the instruction set,
+# the SHA-256 falls back to the scalar path with no behaviour change. The
+# hardware path is verified against the scalar path on the FIPS 180-4 test
+# vectors and on randomized split inputs -- both tests run unconditionally
+# when this feature is on, so a silent correctness regression cannot ship.
+sha256-hw = []
+# Deflate/Bzip2/Lz77 ENCODERS. The rgx build never writes a compressed
+# archive -- it searches inside them. The encoders stay in the binary
+# to keep the codec roundtrip tests in the archive adapter working
+# without a feature flag; the build cost is a few thousand lines of
+# code, the runtime cost is zero (no `encode()` call site lives in
+# the rgx binary path). The sevenz crate's own encoders (used to write
+# 7z solid archives in tests) are similarly dead in rgx itself but
+# still loaded by the archive adapter's test suite.
+
+[dependencies]
+# The `libc` constants and `mmap(2)` / `msync(2)` / `madvise(2)` syscall
+# FFI the vendored `memmap2` module's Unix side uses. Gated on `std`
+# because the module is -- `RawFd` and `mmap(2)` are `std`-only by
+# Rust's design, and the `no_std` build does not compile the file at
+# all. The dep is `no_std` itself, so this stays a no_std crate when
+# `std` is off.
+libc = { version = "0.2", default-features = false, optional = true }
+# Byte scanning. `pub mod memchr;` in `lib.rs` re-exports the crate as
+# an in-tree module so every call site keeps the same
+# `rgx_core::memchr::*` path it has used since the in-house module
+# was deleted. `default-features = false` keeps `rgx-core`
+# `no_std + alloc` when the `std` feature is off, and `memchr/std` is
+# what the `std` feature turns on.
+#
+# The dispatch inside memchr is chosen at COMPILE time -- its SSE2 and
+# AVX2 paths are `target_feature` gates, and it carries no runtime CPU
+# probe -- so the feature buys the std-linked build of the dependency,
+# not a runtime detection that this crate would have to pay for.
+memchr = { version = "2", default-features = false }
+# Filesystem walker for the pack-store builder. Gated on the
+# `tv-runtime` feature because the builder is the only consumer and
+# the builder is std-bound. `default-features = false` keeps the
+# rest of the crate no_std when tv-runtime is off.
+ignore = { version = "0.4", default-features = false, optional = true }
+
+[dev-dependencies]
+# The oracle for the syntax and replacement tests, for the same reason and
+# with the same rule: the `(?-u)` flag acceptance, the translated-glob
+# fixtures and every shape of `$`-template are differential against what
+# this crate's `regex` does with the same bytes. It is already in the lock
+# file through the workspace's `regex`; nothing in the library links it.
+#
+# `default-features = false` is load-bearing. The `regex` crate's `std`
+# feature turns on `memchr/std`, and `memchr`'s `std` feature is what links
+# the standard library into the binary -- so a dev-dependency with `std` on
+# would put `std` back into the `--no-default-features` build through the
+# back door, and the `no_std` gate would be testing a build that is not
+# `no_std`. Cargo unifies features across the whole graph, dev-dependencies
+# included, so the leak is real and it is silent: the build succeeds and the
+# tests pass. With `default-features = false` the oracle is the `alloc`-only
+# build of `regex`, which answers the same questions.
+regex = { version = "1", default-features = false, features = ["perf", "unicode"] }
+# `aho-corasick` is gone. The only consumer was the
+# `examples/prefilter_ablate.rs` ablation, which used the packed
+# search as a Teddy-shaped reference; the bench now compares rgx's
+# own `memmem` and `Byte3` paths against each other, and the
+# in-house multi-literal answer (the same one rgx actually ships)
+# is the only one that matters.
+
+[[bin]]
+# The Tesla Valve CLI: build / search / update / inspect on a pack store.
+# Lives in src/bin/rgx-tv.rs and depends on the tv-runtime feature for
+# the filesystem, thread pool and pack-store types.
+name = "rgx-tv"
+path = "src/bin/rgx-tv.rs"
+required-features = ["tv-runtime"]

@@ -1,0 +1,58 @@
+[package]
+name = "rgx-adapters-office"
+version = "0.1.1"
+edition = "2021"
+authors = ["Dan Alec Yamaguchi <danalec@gmail.com>"]
+description = "rgx adapters for Office/OpenDocument/e-book containers, parsed in-process (zip + XML strip, no external tools)"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["docx", "xlsx", "pptx", "rtf", "visio"]
+categories = ["parser-implementations", "encoding"]
+repository = "https://github.com/danalec/rgx"
+# What the published crate carries. The test corpus is the repository's:
+# the fixtures under `testdata/` are what this crate's own tests read, and
+# a user of the crate has no use for them. The examples are one-off
+# diagnostics, not API demos. The licence and the notice are here because
+# they are the law on the code.
+include = [
+    "/src/**",
+    # The EGM contracts are the working documents of the review loop: they
+    # are gitignored, they are not source, and `/src/**` would have carried
+    # every one of them into the published crate. `exclude` cannot say it --
+    # cargo ignores the exclude list when an include list is there -- so the
+    # exclusion is a negation of the include.
+    "!/src/**/EGM.md",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE-APACHE",
+    "/NOTICE",
+]
+
+[features]
+# One feature per adapter, in the order `adapters()` returns them. The
+# default is the whole crate: a binary that names the formats it needs
+# builds with `--no-default-features --features <name>`.
+default = ["office", "rtf", "doc", "ppt", "xls", "tex", "visio", "markup", "abiword", "hwp", "wordperfect"]
+# The office adapter reads the zip-based formats (docx, xlsx, pptx, ODF,
+# epub) and spends the archive crate's producer budget on them, so it is
+# the family that pulls that crate in. Its `std` feature is what carries the
+# `budget` module.
+office = ["dep:rgx-adapters-archive", "rgx-adapters-archive/std", "rgx-core/zip"]
+rtf = []
+doc = []
+ppt = []
+xls = []
+tex = []
+visio = []
+markup = []
+abiword = ["rgx-core/gzip"]
+hwp = ["rgx-core/zlib"]
+wordperfect = []
+[dependencies]
+rgx-core = { path = "../rgx-core", version = "0.1.1", default-features = false, features = ["std", "sha256-hw"] }
+# The zip reader in `lib.rs` spends the same producer budget as the
+# archive crate's own zip adapter (`budget::MemberSink`), so a `.docx` is
+# capped by `-M` / RGX_MAX_MEMBER_BYTES like every other container.
+# Optional: only the `office` family spends that budget, and it switches
+# off with it.
+rgx-adapters-archive = { path = "../rgx-adapters-archive", version = "0.1.1", default-features = false, optional = true }

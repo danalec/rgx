@@ -1,0 +1,71 @@
+# Build outputs.
+/target/
+/.dist/
+/.cache/
+
+# Generated corpora, downloaded tool bundles, reference checkouts, pack stores.
+/tests/golden/
+/tests/.rgx-*/
+/benchmark/target/
+/benchmark/ripgrep-15/
+/benchmark/.rgx-*/
+/benchmark/tv/
+/benchmark/diffrig/.rg*.err
+/benchmark/diffrig/in.txt
+/benchmark/diffrig/t1.txt
+/benchmark/diffrig/t2.txt
+**/.rgx-tv/
+
+# Logs and editor leftovers.
+*.log
+*.bak
+*.ugi
+.vscode/
+.idea/
+
+# Agent harnesses: their own directories, their own instruction files, their
+# own scratch. They are tools, not the project.
+.claude/
+.codex/
+.qwen/
+.zcode/
+.kimi/
+.cursor/
+.gemini/
+.serena/
+.cline/
+.agent/
+.agents/
+.memory/
+.opencode/
+.openclaw/
+.antigravity/
+.aider/
+.aider.conf.yml
+.aiderignore
+.continue/
+.clinerules
+.roo/
+.roorules
+.windsurf/
+.windsurfrules
+CLAUDE.md
+GEMINI.md
+.mcp.json
+mcp.json
+
+# Python bytecode.
+__pycache__/
+*.pyc
+*.py[cod]
+
+# Agent scratch: the decisions these record belong in the code they describe.
+/.remember/
+/.egm/
+/docs/designs/
+EGM.md
+/.worktrees/
+
+# The working notes of this repository are in the tree, not out of it: they
+# are what the code says about itself, and the commit that changes the code
+# carries the note that says why it changed.

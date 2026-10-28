@@ -1,0 +1,170 @@
+  0
+SECTION
+  2
+HEADER
+  9
+$ACADVER
+  1
+AC1015
+  9
+$INSUNITS
+ 70
+     4
+  0
+ENDSEC
+  0
+SECTION
+  2
+TABLES
+  0
+TABLE
+  2
+LAYER
+  5
+2A
+100
+AcDbSymbolTable
+ 70
+     4
+  0
+LAYER
+  5
+2B
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+0
+ 70
+     0
+ 62
+     7
+  6
+CONTINUOUS
+  0
+LAYER
+  5
+2C
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+LAYER1
+ 70
+     0
+ 62
+     7
+  6
+CONTINUOUS
+  0
+LAYER
+  5
+2D
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+NOTES
+ 70
+     0
+ 62
+     3
+  6
+CONTINUOUS
+  0
+LAYER
+  5
+2E
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+PLOT
+ 70
+     0
+ 62
+     5
+  6
+CONTINUOUS
+  0
+ENDTAB
+  0
+ENDSEC
+  0
+SECTION
+  2
+ENTITIES
+  0
+LINE
+  5
+2F
+100
+AcDbEntity
+  8
+LAYER1
+ 62
+     7
+100
+AcDbLine
+ 10
+     0.0
+ 20
+     0.0
+ 30
+     0.0
+ 11
+     100.0
+ 21
+     50.0
+ 31
+     0.0
+  0
+TEXT
+  5
+30
+100
+AcDbEntity
+  8
+NOTES
+ 62
+     3
+100
+AcDbText
+ 10
+     10.0
+ 20
+     20.0
+ 30
+     0.0
+ 40
+     2.5
+  1
+Contrato ACME
+  0
+CIRCLE
+  5
+31
+100
+AcDbEntity
+  8
+PLOT
+ 62
+     5
+100
+AcDbCircle
+ 10
+     50.0
+ 20
+     25.0
+ 30
+     0.0
+ 40
+     25.0
+  0
+ENDSEC
+  0
+EOF

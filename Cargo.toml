@@ -1,0 +1,329 @@
+[workspace]
+members = [
+    "crates/rgx-core",
+    "crates/rar-codec",
+    "crates/rgx-adapters-archive",
+    "crates/rgx-adapters-office",
+    "crates/rgx-adapters-threed",
+    "crates/rgx-adapters-llm",
+    "crates/rgx-adapters-media",
+    "crates/rgx-adapters-tabular",
+    "crates/rgx-adapters-docs",
+    "crates/rgx-adapters-mail",
+    "crates/rgx-adapters-inspect",
+    "crates/rgx-adapters-pdf",
+]
+resolver = "2"
+
+[package]
+# The registry name is `rgx-search` because `rgx` is taken on crates.io by
+# an unrelated project. The binary it installs is `rgx`, and the project
+# itself is `rgx` everywhere else -- the repository, the release, the
+# winget package. The library crates keep their own names (`rgx-core`,
+# `rgx-adapters-*`), all of them free.
+name = "rgx-search"
+version = "0.1.1"
+edition = "2021"
+authors = ["Dan Alec Yamaguchi <danalec@gmail.com>"]
+description = "Search inside everything — PDFs, Office documents, archives, 3D models, LLM checkpoints, databases, e-mail — with ripgrep-compatible flags and lightweight in-process content adapters"
+# Every file in this package is Apache-2.0 and says so on its first line:
+# the engine, the walker, the CLI, the pack store, the compression codecs,
+# the RAR and 7z decoders, the EXIF/TIFF parser and the vendored argument
+# parser under `src/cli/`. The adapter crates under `crates/` are separate
+# packages, each with its own licence field, and every one of them is
+# Apache-2.0 as well: the layouts a few files implement were learned from
+# third-party implementations, which are the descriptions of those formats
+# that exist, and the code is rgx's own. See COPYING — and `NOTICE` for
+# what is not rgx's code.
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["search", "grep", "ripgrep", "grep-like", "text-search"]
+categories = ["command-line-utilities", "text-processing"]
+repository = "https://github.com/danalec/rgx"
+
+# What the published crate carries. Without this list the package is the
+# WHOLE repository: 1 195 files, among them the release scripts, the
+# benchmarks, the integration tests (which reach for `../crates/*/testdata`
+# and cannot run outside the workspace), and `.cargo/config.toml` -- and
+# that last one is the one that bites. Cargo reads the config of the
+# directory it builds in, so a `cargo install rgx-search` on Windows would
+# inherit `linker = "lld-link"` and fail on every machine that has no
+# LLVM installed. The crate a user installs has to build with the toolchain
+# the user has.
+#
+# The licences are here because they are the law on the code: LICENSE-APACHE
+# (the Apache-2.0 text), NOTICE (what is not rgx's code) and COPYING (why the
+# tree has one licence and what it does not cover). The manuals are here
+# because the README links to them.
+include = [
+    "/src/**",
+    # The EGM contracts are the working documents of the review loop: they
+    # are gitignored, they are not source, and `/src/**` would have carried
+    # every one of them into the published crate. `exclude` cannot say it --
+    # cargo ignores the exclude list when an include list is there -- so the
+    # exclusion is a negation of the include.
+    "!/src/**/EGM.md",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/MANUAL.md",
+    "/FORMATS.md",
+    "/COPYING",
+    "/LICENSE-APACHE",
+    "/NOTICE",
+]
+
+[[bin]]
+name = "rgx"
+path = "src/main.rs"
+
+[dependencies]
+rgx-core = { path = "crates/rgx-core", version = "0.1.1", default-features = false, features = ["std", "sha256-hw", "tv-runtime"] }
+rgx-adapters-archive = { path = "crates/rgx-adapters-archive", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-office = { path = "crates/rgx-adapters-office", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-threed = { path = "crates/rgx-adapters-threed", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-llm = { path = "crates/rgx-adapters-llm", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-media = { path = "crates/rgx-adapters-media", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-tabular = { path = "crates/rgx-adapters-tabular", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-docs = { path = "crates/rgx-adapters-docs", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-mail = { path = "crates/rgx-adapters-mail", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-inspect = { path = "crates/rgx-adapters-inspect", version = "0.1.1", optional = true, default-features = false }
+rgx-adapters-pdf = { path = "crates/rgx-adapters-pdf", version = "0.1.1", optional = true, default-features = false }
+# The work-stealing deque in src/walk.rs. Already a transitive of `rgx-tv`'s
+# `ignore` dep, so adding it here pulls no new crate; using the well-tested
+# `crossbeam-deque` keeps the unsafe surface to a small, audited block instead
+# of a hand-rolled Chase-Lev implementation behind the walker's mutex.
+crossbeam-deque = "0.8"
+# K10 + scaling: thread-scalable allocator. MSVCRT HeapAlloc serialises
+# 32-worker walks on Windows; mimalloc's per-thread arenas cut that
+# contention. Gated by the `mimalloc` feature, which is OFF by default:
+# the median gain is small and the variance is large on this machine, and
+# an unmeasured number is not a number -- the seven-round bench that
+# decided it is on the feature below.
+mimalloc = { version = "0.1", default-features = false, optional = true }
+# Compression for the persistent extraction cache (`src/cache.rs`).
+# `lz4_flex` is a pure-Rust LZ4 implementation, no unsafe by default;
+# it cuts the on-disk size of a multi-hundred-megabyte cache by ~3-5x
+# on text-heavy extracted bodies (PDF, DOCX) without measurable write
+# latency, and is decoded lazily on read.
+#
+# The `alloc` feature is the whole of what the cache needs: it is the
+# BLOCK API (`compress_prepend_size` / `decompress_size_prepended`), and
+# since 0.14 the block module is behind that feature. `std` and `frame`
+# stay off, so the crate keeps the footprint it had -- no `twox-hash`
+# in the tree, nothing linked that the cache does not call.
+lz4_flex = { version = "0.14", default-features = false, features = ["alloc"] }
+
+# K10: read-only file mapping (src/mmap.rs). The `memmap2` crate is
+# vendored into `rgx-core` (gated on `std`) as an independent
+# reimplementation of upstream `RazrFalcon/memmap2-rs` commit `f16835d`
+# (v0.9.0). The workspace's last runtime dep on `memmap2` is gone; every
+# consumer (rgx, rgx-tv) goes through `rgx_core::memmap2`.
+# inline-string storage for `prefix` (src/main.rs::Inline<N>) is in-tree.
+# The previous `smallstr = "0.3"` dep is gone: the only call site is a
+# per-line formatter whose interface is `core::fmt::Write + len +
+# as_str + Into<String>`, all of which a 60-line struct provides.
+
+[features]
+default = [
+    "adapters-archive",
+    "adapters-office",
+    "adapters-threed",
+    "adapters-llm",
+    "adapters-media",
+    "adapters-tabular",
+    "adapters-pdf",
+    "adapters-docs",
+    "adapters-mail",
+    "adapters-inspect",
+]
+
+# One knob per adapter crate: every format that crate knows.
+# It is the LIST of the crate's format features, not the crate's
+# own `default`: a single format must not drag in the other
+# twenty-two, and the registry in `src/main.rs` is gated on these
+# same features, so the crate and its adapters are always in step.
+adapters-archive = ["format-zip", "format-7z", "format-tar", "format-cpio", "format-ar", "format-git-pack", "format-git-bundle", "format-svn-dump", "format-decompress", "format-rar", "format-pgdump", "format-borg", "format-iso9660", "format-img", "format-applefs", "format-vhd", "format-vhdx", "format-qcow2", "format-vmdk", "format-vdi", "format-wim", "format-erofs", "format-squashfs"]
+adapters-office = ["format-office", "format-rtf", "format-doc", "format-ppt", "format-xls", "format-tex", "format-visio", "format-markup", "format-abiword", "format-hwp-raw", "format-wordperfect"]
+adapters-threed = ["format-glb", "format-stl", "format-ply", "format-fbx", "format-pcd", "format-las", "format-vtk", "format-blend", "format-3ds", "format-nifti", "format-mrc"]
+adapters-llm = ["format-gguf", "format-safetensors", "format-npy", "format-protobuf", "format-tiktoken", "format-keras", "format-torch", "format-pickle"]
+adapters-media = ["format-exif", "format-tiff", "format-gif", "format-bmp", "format-psd", "format-jpeg2000", "format-jpegxl", "format-openexr", "format-avi", "format-asf", "format-flv", "format-mpeg", "format-audiotags", "format-fits", "format-dicom", "format-font", "format-woff", "format-mobi", "format-videotags"]
+adapters-tabular = ["format-sqlite", "format-duckdb", "format-foxpro", "format-dbf", "format-slk", "format-dif", "format-lotus123", "format-mdb", "format-lmdb", "format-shp", "format-parquet", "format-eri", "format-mat", "format-netcdf", "format-arrow", "format-hdf5", "format-bson", "format-redis-rdb", "format-redis-aof", "format-leveldb", "format-zarr"]
+adapters-pdf = ["format-pdf"]
+adapters-docs = ["format-soffice", "format-ocr"]
+adapters-mail = ["format-mbox", "format-eml", "format-msg", "format-emlx", "format-pst", "format-wab", "format-mmdf", "format-msf", "format-mailbox-index"]
+adapters-inspect = ["format-pe-resources", "format-inspect", "format-macho-strings", "format-elf-provenance", "format-dex-strings", "format-wasm", "format-wasm-meta", "format-lnk", "format-x509", "format-ole2-compound", "format-bplist", "format-tiff-pages", "format-djvu", "format-isobmff", "format-dwg", "format-parasolid-xt", "format-acis-sab", "format-rvt", "format-dgn", "format-dxf", "format-step", "format-iges", "format-acis-sat", "format-stl-ascii", "format-cgm", "format-cals", "format-edmics-c4", "format-plt", "format-grib", "format-bufr", "format-segy", "format-root", "format-n5", "format-firebird", "format-bam", "format-bcf", "format-cram", "format-sam", "format-fasta", "format-fastq", "format-vcf", "format-gff", "format-pdb", "format-mmcif"]
+
+# One knob per format: only that format, and nothing else.
+# The feature is named after the name the adapter reports, which is
+# the string `--json` prints when that adapter answers.
+format-zip = ["dep:rgx-adapters-archive", "rgx-adapters-archive/zip"]
+format-7z = ["dep:rgx-adapters-archive", "rgx-adapters-archive/sevenz"]
+format-tar = ["dep:rgx-adapters-archive", "rgx-adapters-archive/tar"]
+format-cpio = ["dep:rgx-adapters-archive", "rgx-adapters-archive/cpio"]
+format-ar = ["dep:rgx-adapters-archive", "rgx-adapters-archive/ar"]
+format-git-pack = ["dep:rgx-adapters-archive", "rgx-adapters-archive/git-pack"]
+format-git-bundle = ["dep:rgx-adapters-archive", "rgx-adapters-archive/git-bundle"]
+format-svn-dump = ["dep:rgx-adapters-archive", "rgx-adapters-archive/svn-dump"]
+format-decompress = ["dep:rgx-adapters-archive", "rgx-adapters-archive/decompress"]
+format-rar = ["dep:rgx-adapters-archive", "rgx-adapters-archive/rar"]
+format-pgdump = ["dep:rgx-adapters-archive", "rgx-adapters-archive/pgdump"]
+format-borg = ["dep:rgx-adapters-archive", "rgx-adapters-archive/borg"]
+format-iso9660 = ["dep:rgx-adapters-archive", "rgx-adapters-archive/iso9660"]
+format-img = ["dep:rgx-adapters-archive", "rgx-adapters-archive/raw-image"]
+format-applefs = ["dep:rgx-adapters-archive", "rgx-adapters-archive/applefs"]
+format-vhd = ["dep:rgx-adapters-archive", "rgx-adapters-archive/vhd"]
+format-vhdx = ["dep:rgx-adapters-archive", "rgx-adapters-archive/vhdx"]
+format-qcow2 = ["dep:rgx-adapters-archive", "rgx-adapters-archive/qcow2"]
+format-vmdk = ["dep:rgx-adapters-archive", "rgx-adapters-archive/vmdk"]
+format-vdi = ["dep:rgx-adapters-archive", "rgx-adapters-archive/vdi"]
+format-wim = ["dep:rgx-adapters-archive", "rgx-adapters-archive/wim"]
+format-erofs = ["dep:rgx-adapters-archive", "rgx-adapters-archive/erofs"]
+format-squashfs = ["dep:rgx-adapters-archive", "rgx-adapters-archive/squashfs"]
+format-soffice = ["dep:rgx-adapters-docs", "rgx-adapters-docs/soffice"]
+format-ocr = ["dep:rgx-adapters-docs", "rgx-adapters-docs/ocr"]
+format-pe-resources = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/pe"]
+format-inspect = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/inspect"]
+format-macho-strings = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/macho"]
+format-elf-provenance = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/elf"]
+format-dex-strings = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/dex"]
+format-wasm = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/wasm"]
+format-wasm-meta = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/wasm-meta"]
+format-lnk = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/lnk"]
+format-x509 = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/x509"]
+format-ole2-compound = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/compound"]
+format-bplist = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/bplist"]
+format-tiff-pages = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/tiff"]
+format-djvu = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/djvu"]
+format-isobmff = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/isobmff"]
+format-dwg = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/dwg"]
+format-parasolid-xt = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/parasolid"]
+format-acis-sab = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/acis-sab"]
+format-rvt = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/rvt"]
+format-dgn = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/dgn"]
+format-dxf = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/dxf"]
+format-step = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/step"]
+format-iges = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/iges"]
+format-acis-sat = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/acis-sat"]
+format-stl-ascii = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/stl"]
+format-cgm = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/cgm"]
+format-cals = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/cals"]
+format-edmics-c4 = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/c4"]
+format-plt = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/plt"]
+format-grib = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/grib"]
+format-bufr = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/bufr"]
+format-segy = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/segy"]
+format-root = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/root"]
+format-n5 = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/n5"]
+format-firebird = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/firebird"]
+format-bam = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/bam"]
+format-bcf = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/bcf"]
+format-cram = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/cram"]
+format-sam = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/sam"]
+format-fasta = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/fasta"]
+format-fastq = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/fastq"]
+format-vcf = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/vcf"]
+format-gff = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/gff"]
+format-pdb = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/pdb"]
+format-mmcif = ["dep:rgx-adapters-inspect", "rgx-adapters-inspect/mmcif"]
+format-gguf = ["dep:rgx-adapters-llm", "rgx-adapters-llm/gguf"]
+format-safetensors = ["dep:rgx-adapters-llm", "rgx-adapters-llm/safetensors"]
+format-npy = ["dep:rgx-adapters-llm", "rgx-adapters-llm/npy"]
+format-protobuf = ["dep:rgx-adapters-llm", "rgx-adapters-llm/protobuf"]
+format-tiktoken = ["dep:rgx-adapters-llm", "rgx-adapters-llm/tiktoken"]
+format-keras = ["dep:rgx-adapters-llm", "rgx-adapters-llm/keras"]
+format-torch = ["dep:rgx-adapters-llm", "rgx-adapters-llm/torch"]
+format-pickle = ["dep:rgx-adapters-llm", "rgx-adapters-llm/pickle"]
+format-mbox = ["dep:rgx-adapters-mail", "rgx-adapters-mail/mbox"]
+format-eml = ["dep:rgx-adapters-mail", "rgx-adapters-mail/eml"]
+format-msg = ["dep:rgx-adapters-mail", "rgx-adapters-mail/msg"]
+format-emlx = ["dep:rgx-adapters-mail", "rgx-adapters-mail/emlx"]
+format-pst = ["dep:rgx-adapters-mail", "rgx-adapters-mail/pst"]
+format-wab = ["dep:rgx-adapters-mail", "rgx-adapters-mail/wab"]
+format-mmdf = ["dep:rgx-adapters-mail", "rgx-adapters-mail/mmdf"]
+format-msf = ["dep:rgx-adapters-mail", "rgx-adapters-mail/thunderbird"]
+format-mailbox-index = ["dep:rgx-adapters-mail", "rgx-adapters-mail/apple-mailbox"]
+format-exif = ["dep:rgx-adapters-media", "rgx-adapters-media/exif"]
+format-tiff = ["dep:rgx-adapters-media", "rgx-adapters-media/tiff"]
+format-gif = ["dep:rgx-adapters-media", "rgx-adapters-media/gif"]
+format-bmp = ["dep:rgx-adapters-media", "rgx-adapters-media/bmp"]
+format-psd = ["dep:rgx-adapters-media", "rgx-adapters-media/psd"]
+format-jpeg2000 = ["dep:rgx-adapters-media", "rgx-adapters-media/jpeg2000"]
+format-jpegxl = ["dep:rgx-adapters-media", "rgx-adapters-media/jpegxl"]
+format-openexr = ["dep:rgx-adapters-media", "rgx-adapters-media/openexr"]
+format-avi = ["dep:rgx-adapters-media", "rgx-adapters-media/avi"]
+format-asf = ["dep:rgx-adapters-media", "rgx-adapters-media/asf"]
+format-flv = ["dep:rgx-adapters-media", "rgx-adapters-media/flv"]
+format-mpeg = ["dep:rgx-adapters-media", "rgx-adapters-media/mpeg"]
+format-audiotags = ["dep:rgx-adapters-media", "rgx-adapters-media/audio-tags"]
+format-fits = ["dep:rgx-adapters-media", "rgx-adapters-media/fits"]
+format-dicom = ["dep:rgx-adapters-media", "rgx-adapters-media/dicom"]
+format-font = ["dep:rgx-adapters-media", "rgx-adapters-media/font"]
+format-woff = ["dep:rgx-adapters-media", "rgx-adapters-media/woff"]
+format-mobi = ["dep:rgx-adapters-media", "rgx-adapters-media/mobi"]
+format-videotags = ["dep:rgx-adapters-media", "rgx-adapters-media/video-tags"]
+format-office = ["dep:rgx-adapters-office", "rgx-adapters-office/office"]
+format-rtf = ["dep:rgx-adapters-office", "rgx-adapters-office/rtf"]
+format-doc = ["dep:rgx-adapters-office", "rgx-adapters-office/doc"]
+format-ppt = ["dep:rgx-adapters-office", "rgx-adapters-office/ppt"]
+format-xls = ["dep:rgx-adapters-office", "rgx-adapters-office/xls"]
+format-tex = ["dep:rgx-adapters-office", "rgx-adapters-office/tex"]
+format-visio = ["dep:rgx-adapters-office", "rgx-adapters-office/visio"]
+format-markup = ["dep:rgx-adapters-office", "rgx-adapters-office/markup"]
+format-abiword = ["dep:rgx-adapters-office", "rgx-adapters-office/abiword"]
+format-hwp-raw = ["dep:rgx-adapters-office", "rgx-adapters-office/hwp"]
+format-wordperfect = ["dep:rgx-adapters-office", "rgx-adapters-office/wordperfect"]
+format-pdf = ["dep:rgx-adapters-pdf", "rgx-adapters-pdf/pdf"]
+format-sqlite = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/sqlite"]
+format-duckdb = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/duckdb"]
+format-foxpro = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/foxpro"]
+format-dbf = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/dbf"]
+format-slk = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/slk"]
+format-dif = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/dif"]
+format-lotus123 = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/lotus"]
+format-mdb = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/mdb"]
+format-lmdb = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/lmdb"]
+format-shp = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/shp"]
+format-parquet = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/parquet"]
+format-eri = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/eri"]
+format-mat = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/matv5"]
+format-netcdf = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/netcdf3"]
+format-arrow = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/arrow"]
+format-hdf5 = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/hdf5"]
+format-bson = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/bson"]
+format-redis-rdb = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/redis-rdb"]
+format-redis-aof = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/redis-aof"]
+format-leveldb = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/leveldb"]
+format-zarr = ["dep:rgx-adapters-tabular", "rgx-adapters-tabular/zarr"]
+format-glb = ["dep:rgx-adapters-threed", "rgx-adapters-threed/glb"]
+format-stl = ["dep:rgx-adapters-threed", "rgx-adapters-threed/stl"]
+format-ply = ["dep:rgx-adapters-threed", "rgx-adapters-threed/ply"]
+format-fbx = ["dep:rgx-adapters-threed", "rgx-adapters-threed/fbx"]
+format-pcd = ["dep:rgx-adapters-threed", "rgx-adapters-threed/pcd"]
+format-las = ["dep:rgx-adapters-threed", "rgx-adapters-threed/las"]
+format-vtk = ["dep:rgx-adapters-threed", "rgx-adapters-threed/vtk"]
+format-blend = ["dep:rgx-adapters-threed", "rgx-adapters-threed/blend"]
+format-3ds = ["dep:rgx-adapters-threed", "rgx-adapters-threed/threeds"]
+format-nifti = ["dep:rgx-adapters-threed", "rgx-adapters-threed/nifti"]
+format-mrc = ["dep:rgx-adapters-threed", "rgx-adapters-threed/mrc"]
+
+# Optional Windows scaling: see `mimalloc` dep above. Off by default
+# because the variance it adds on this machine outweighs the median
+# gain the user's claim cites: the same seven-round bench that prints
+# rgx at 0.93x of rg with mimalloc also prints rgx at 0.93x without
+# it, and without mimalloc the slowest round is 43 ms instead of 98.
+# Opt in explicitly: `cargo build --features mimalloc`.
+mimalloc = ["dep:mimalloc"]
+[dev-dependencies]
+flate2 = "1"
+zip = { version = "9", default-features = false }
+# the oracle: tests/walk_diff.rs walks the same tree with the `ignore` crate
+# and requires the in-house walker to agree file for file
+ignore = "0.4"
+
+# cross-crate inlining of the hot paths (search loop, memmem scanners) —
+# thin LTO + single codegen unit; measured single-digit % on the corpus
+# walks, free at run time
+[profile.release]
+lto = "thin"
+codegen-units = 1
