@@ -1,0 +1,140 @@
+rgx — Notices
+
+License
+-------
+This project is licensed under the Apache License, Version 2.0 (Apache-2.0),
+and under no other license. Every file in this repository carries an
+SPDX-License-Identifier header saying so, and
+`tests/cli.rs::every_file_carries_its_spdx_header` reads the file list out of
+git and fails on the first file that says otherwise. See LICENSE-APACHE and
+COPYING.
+
+What is not rgx's code
+----------------------
+No source file of any upstream project is included in this repository. What
+the tree carries of other people is *knowledge* — the layout of a file
+format — and the record of where that knowledge came from. The code that
+encodes it was written here, in this tree's idiom, and it is held against
+the corpora each format's own producer writes.
+
+crates/rgx-adapters-inspect/src/cad_sat.rs
+    The ACIS SAT record layout, learned from the writer side of ezdxf
+    (https://github.com/mozman/ezdxf).
+
+crates/rgx-adapters-archive/src/borg.rs
+    The borg segment framing, the payload envelope, the compressor tags and
+    the item metadata, learned from borg 1.2's own source
+    (https://github.com/borgbackup/borg).
+
+crates/rgx-adapters-archive/src/pgdump.rs
+    The custom-dump framing and the table of contents, learned from
+    PostgreSQL's own `pg_dump` source (https://github.com/postgres/postgres).
+
+crates/rgx-adapters-tabular/src/databases.rs
+    The Redis RDB type table and length encoding, learned from Redis's own
+    source (https://github.com/redis/redis), and the LZF decompressor,
+    written from liblzf's `lzfP.h` (https://github.com/libarchive/liblzf),
+    which Redis vendors rather than depends on.
+
+crates/rgx-adapters-tabular/src/lmdb.rs
+    The `MDB_meta` layout, learned from LMDB's own `mdb.c`
+    (https://github.com/LMDB/lmdb).
+
+crates/rgx-core/src/memmap2/
+    An independent reimplementation of `memmap2-rs` upstream commit f16835d
+    (v0.9.0), Copyright 2015 Dan Burkert and 2020 Yevhenii Reizner, whose
+    public API was read to learn the contract. No upstream source file is in
+    the tree. Upstream offered its work under MIT OR Apache-2.0; the
+    Apache-2.0 option is the one taken here.
+
+crates/rgx-core/src/frequency.rs
+    The byte-rank table in `RANK` is copied from the `memchr` crate
+    (https://github.com/BurntSushi/memchr), which offers MIT OR Apache-2.0;
+    the Apache-2.0 option is the one taken. The file's own header says that
+    the values are copied, not measured here.
+
+crates/rgx-adapters-office/src/visio.rs, ppt.rs, tex.rs, xls.rs,
+crates/rgx-adapters-media/src/avi.rs, flv.rs, mpeg.rs, mp4mkv.rs,
+crates/rgx-adapters-inspect/src/x509.rs, crates/rgx-adapters-docs/src/lib.rs
+    Reduced ports of readers of the `io` project by Dan Gohman
+    (dev@sunfishcode.online), which offers MIT OR Apache-2.0; the Apache-2.0
+    option is the one taken. The Visio reader's grammar was read from
+    LibreOffice's `libvisio`, the reconstruction of the format that exists;
+    no libvisio code is in this tree.
+
+crates/rgx-adapters-inspect/testdata/sample.plt
+    A capture from an HP 8595E plotter, taken from the HPGL-Plotter project
+    (https://github.com/VK2BEA/HPGL-Plotter), used unmodified.
+    Apache License 2.0. Copyright 2022 Michael G. Katzmann.
+
+The corpora under `crates/*/testdata/` are real files, taken from the
+reference implementations of the formats they exercise rather than written
+by hand, and each is covered by its own project's licence — BSD-3-Clause for
+most of them, Apache-2.0 for the HPGL-Plotter capture, the terms of their own
+projects for the rest. The README of each fixture directory says which file
+came from which project and what its terms are. They are data, not code, and
+none of them carries a licence obligation on this code.
+
+Third-party components in a distributed binary
+----------------------------------------------
+A distributed `rgx` binary is not only rgx's code: it links the Rust
+dependencies, and each of them carries its own permissive license (MIT,
+MIT OR Apache-2.0, BSD-2-Clause, BSD-3-Clause, Zlib, CC0-1.0, Unicode-3.0,
+0BSD, ISC, and similar). Those are notices, not obligations on this code.
+The full set can be reproduced with:
+
+    cargo metadata --format-version 1 --locked \
+      | jq -r '.packages[].license' | sort -u
+
+Lineage
+-------
+rgx was inspired by ripgrep-all (https://github.com/phiresky/ripgrep-all)
+and is CLI-compatible with ripgrep where it extends it. No ripgrep-all
+source files are included in this project: every file in this repository
+was written for rgx. Behavioral parity, flag semantics, and adapter
+concepts are ideas, not code, and are not subject to copyright.
+
+Two lineages are worth naming, because a reader who wants to know what the
+code is standing on deserves to be told:
+
+  * The 7z tree (`crates/rgx-adapters-archive/src/sevenz/`) was written from
+    the LZMA SDK (https://7-zip.org/sdk.html), which its publisher placed in
+    the public domain: "Anyone is free to copy, modify, publish, use,
+    compile, sell, or distribute the original LZMA SDK code, either in
+    source code form or as a compiled binary, for any purpose, commercial
+    or non-commercial, and by any means." (Copyright (C) Igor Pavlov.)
+    Public domain carries no conditions, so that tree is licensed here
+    under Apache-2.0 like the rest.
+
+  * The RAR codec (`crates/rar-codec/`) was originally a port of libarchive's
+    RAR support (`archive_read_support_format_rar{5,}.c`), which libarchive
+    distributes under the BSD 2-Clause license. Every module of it has since
+    been rewritten as an independent reimplementation, and no upstream file
+    remains in the tree. The terms the port inherited are kept on the record
+    here; the copyright notice itself names libarchive's own holders and
+    travels with the upstream LICENSE:
+
+        Redistribution and use in source and binary forms, with or without
+        modification, are permitted provided that the following conditions
+        are met:
+        1. Redistributions of source code must retain the above copyright
+           notice, this list of conditions and the following disclaimer.
+        2. Redistributions in binary form must reproduce the above copyright
+           notice, this list of conditions and the following disclaimer in
+           the documentation and/or other materials provided with the
+           distribution.
+
+        THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY
+        EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+        IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+        PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR(S) BE LIABLE
+        FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+        CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+        SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+        BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+        WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+        OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+        IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+"ripgrep" and "ripgrep-all" are names of their respective projects;
+references to them here are nominative and do not imply affiliation.

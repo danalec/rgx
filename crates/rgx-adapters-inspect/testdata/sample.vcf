@@ -1,0 +1,12 @@
+##fileformat=VCFv4.2
+##source=rgx-fixture
+##contig=<ID=chr1,length=248956422>
+##contig=<ID=chr2,length=242193529>
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele frequency">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE_A	SAMPLE_B
+chr1	11869	.	G	A	60	PASS	DP=74;AF=0.5	GT:DP	0/1:31	0/0:43
+chr1	14409	.	T	C	99	PASS	DP=120;AF=0.125	GT:DP	1/1:60	0/1:60
+chr2	19930	.	A	T	30	q10	DP=8;AF=0.0625	GT:DP	0/1:8	0/0:0

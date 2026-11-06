@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Generate `crates/rgx-core/src/casefold_table.rs` from the Unicode UCD.
+
+Run with no arguments to fetch the current `CaseFolding.txt`:
+
+    python scripts/gen_casefold_table.py
+
+or point it at a copy you already have:
+
+    python scripts/gen_casefold_table.py path/to/CaseFolding.txt
+
+## What goes in the table
+
+Simple case folding, which UAX #44 defines as the union of the `C` and `S`
+statuses in `CaseFolding.txt` -- **not** `S` alone. `S` means "simple but not
+common"; the ASCII pairs carry `C`. Only `C` and `S` rows are read; `F` (full)
+and `T` (Turkic) rows are deliberately excluded, which is what keeps `ß` from
+folding to `SS`.
+
+Every `C`/`S` row maps to exactly one codepoint, so the relation is a
+matching: each codepoint is in at most one pair. `CaseFolding.txt` records
+each pair once and does not say which direction -- `0041; C; 0061;` is
+present and `0061;` has no line at all -- so a forward table alone cannot
+answer "what else folds to this". Both directions are emitted.
+
+## Why it is generated rather than vendored
+
+`CaseFolding.txt` is normative Unicode data, not source code, and the table
+cannot be reimplemented by hand -- it is 1533 relationships. Rather than copy
+an 88 KB upstream file into the tree, this script reads it and emits a
+12 KB-per-direction Rust array, and the module header records the UCD version
+and a SHA-256 so a reader can tell which revision the table came from. The
+check is exact: the script refuses to emit anything if the input hash does not
+match `--expect-sha256`, which is how a pinned revision is reproduced.
+"""
+
+import argparse
+import hashlib
+import pathlib
+import sys
+import urllib.request
+
+# Pinned, not `latest`. A table that silently moves with whatever Unicode
+# ships next is a table nobody can review: the file changes with no diff in
+# the tree that explains why. The pinned revision is the one the committed
+# table was generated from, and the SHA-256 below is checked on every run
+# unless --no-verify is passed.
+#
+# Note the path is `/Public/<version>/ucd/`, NOT `/Public/UCD/<version>/ucd/`
+# -- the latter 404s, which is worth knowing before someone "fixes" it back.
+UCD_VERSION = "18.0.0"
+UCD_URL = f"https://www.unicode.org/Public/{UCD_VERSION}/ucd/CaseFolding.txt"
+UCD_URL_LATEST = "https://www.unicode.org/Public/UCD/latest/ucd/CaseFolding.txt"
+
+# SHA-256 of the CaseFolding-18.0.0.txt this repository's table was built
+# from, as served. Re-running against a different revision is allowed on
+# purpose -- upgrading Unicode is a deliberate act, and the new hash lands
+# in the generated header where the diff shows it.
+#
+# The first version of this script recorded a different hash here, taken
+# from a local copy that Python's text-mode `open(..., 'w')` had rewritten
+# with CRLF line endings on Windows. The parsed table was unaffected --
+# comments and whitespace are discarded -- but the hash was a fingerprint of
+# a corrupted file rather than of the upstream one, which makes it useless
+# as the thing it exists to be. Read the URL in binary from here on.
+UCD_SHA256 = "a004797658a457bec4dc11683e39f69249ea3b595b752dbea6721c4c9f587b0d"
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+OUT = REPO / "crates" / "rgx-core" / "src" / "casefold_table.rs"
+
+
+def parse(text):
+    """Yield (source, target) for every C or S row."""
+    rows = {}
+    version = None
+    for line in text.splitlines():
+        stripped = line.split("#")[0].strip()
+        if not stripped:
+            head = line.lstrip("# ").strip()
+            if head.startswith("CaseFolding-"):
+                version = head.split()[0][len("CaseFolding-"):].rstrip(".txt")
+            continue
+        parts = [p.strip() for p in stripped.split(";") if p.strip()]
+        cp = int(parts[0], 16)
+        status = parts[1]
+        mapping = [int(t, 16) for p in parts[2:] for t in p.split()]
+        if status in ("C", "S"):
+            if len(mapping) != 1:
+                raise SystemExit(f"U+{cp:04X} status {status} is not 1:1: {mapping}")
+            rows[cp] = mapping[0]
+    if version is None:
+        raise SystemExit("could not find the CaseFolding-<version> header")
+    return version, rows
+
+
+def emit(version, rows, digest):
+    forward = sorted(rows.items())
+    reverse = sorted(((t, s) for s, t in forward))
+
+    # The equivalence class of a codepoint is everything that folds to the
+    # same key, plus the key itself. `CaseFolding.txt` gives the forward
+    # direction; the reverse index is what finds the siblings.
+    classes = {}
+    for src, tgt in forward:
+        classes.setdefault(tgt, set()).add(src)
+    sizes = {}
+    for key, members in classes.items():
+        members.add(key)
+        for m in members:
+            sizes[m] = len(members)
+
+    out = []
+    w = out.append
+    w("// SPDX-License-Identifier: Apache-2.0")
+    w("")
+    w("//! Simple case folding, generated from the Unicode Character Database.")
+    w("//!")
+    w(f"//! Generated by `scripts/gen_casefold_table.py` from `CaseFolding-{version}.txt`,")
+    w("//! the normative simple case folding table published by the Unicode")
+    w("//! Consortium. Do not edit this file; edit the generator and re-run it.")
+    w("//!")
+    w("//! Simple case folding is the union of the `C` and `S` statuses in that")
+    w("//! file -- `S` alone means \"simple but not common\", and the ASCII pairs")
+    w("//! carry `C`. `F` (full) and `T` (Turkic) rows are excluded, which is")
+    w("//! what keeps `ß` from folding to `SS`.")
+    w("//!")
+    w("//! The relation is a matching: every codepoint is in at most one pair, and")
+    w("//! `CaseFolding.txt` records each pair once without saying which end is")
+    w(f"//! which -- `0041; C; 0061;` is present, `0061;` has no line. So a forward")
+    w("//! table alone cannot answer \"what else folds to this\", and both")
+    w("//! directions are emitted.")
+    w("//!")
+    w(f"//! UCD revision: {version}")
+    w(f"//! Source SHA-256: {digest}")
+    w(f"//! Pairs: {len(forward)}   codepoints in the relation: {len(sizes)}")
+    w("")
+    w("/// `(source, target)` sorted by source. `target` is the codepoint's")
+    w("/// canonical form; a codepoint that is not a source is its own canonical")
+    w("/// form.")
+    w(f"pub(crate) static SIMPLE: [(u32, u32); {len(forward)}] = [")
+    for src, tgt in forward:
+        w(f"    (0x{src:04X}, 0x{tgt:04X}),")
+    w("];")
+    w("")
+    w("/// The same pairs sorted by target, which is what finds every sibling of a")
+    w("/// canonical form: `REVERSE[i].0 == k` for every codepoint that folds to `k`.")
+    w(f"pub(crate) static REVERSE: [(u32, u32); {len(reverse)}] = [")
+    for tgt, src in reverse:
+        w(f"    (0x{tgt:04X}, 0x{src:04X}),")
+    w("];")
+    w("")
+    return "\n".join(out), classes, sizes
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("path", nargs="?", help="local CaseFolding.txt")
+    ap.add_argument("--latest", action="store_true",
+                    help="fetch from /UCD/latest/ instead of the pinned version")
+    ap.add_argument("--no-verify", action="store_true",
+                    help="emit without checking the pinned SHA-256 (for a Unicode upgrade)")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    if args.path:
+        raw = pathlib.Path(args.path).read_bytes()
+    else:
+        url = UCD_URL_LATEST if args.latest else UCD_URL
+        raw = urllib.request.urlopen(url, timeout=60).read()
+
+    digest = hashlib.sha256(raw).hexdigest()
+    if not args.no_verify and digest != UCD_SHA256:
+        raise SystemExit(
+            f"input is not the pinned revision\n"
+            f"  pinned {UCD_VERSION} sha256 {UCD_SHA256}\n"
+            f"  got               sha256 {digest}\n"
+            f"Upgrading Unicode is deliberate: re-run with --no-verify and let the new\n"
+            f"hash land in the generated header, where the diff shows it."
+        )
+
+    version, rows = parse(raw.decode("utf-8"))
+    text, classes, sizes = emit(version, rows, digest)
+
+    if not args.dry_run:
+        OUT.write_text(text, encoding="utf-8", newline="\n")
+        print(f"wrote {OUT.relative_to(REPO)}")
+
+    hist = {}
+    for n in sizes.values():
+        hist[n] = hist.get(n, 0) + 1
+    print(f"UCD {version}  sha256 {digest}")
+    print(f"pairs {len(rows)}  classes {len(classes)}  codepoints in a class {len(sizes)}")
+    print(f"class size histogram {dict(sorted(hist.items()))}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

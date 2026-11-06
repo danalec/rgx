@@ -1,0 +1,11 @@
+# Link with LLVM's lld-link instead of MSVC link.exe.
+#
+# Runtime codegen is identical either way — rustc emits LLVM IR and the
+# linker only lays it out (measured: within noise, see
+# scripts/bench-linkers.ps1). The wins are link speed and determinism.
+# Requires LLVM on PATH: `winget install LLVM.LLVM`.
+#
+# Deliberately NO -C target-cpu here: dev and CI builds stay portable.
+# The Zen-4-tuned variant ships only via scripts/build-release.ps1.
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"

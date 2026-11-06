@@ -1,0 +1,47 @@
+[package]
+name = "rgx-core-fuzz"
+version = "0.0.0"
+publish = false
+license = "Apache-2.0"
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.rgx-core]
+path = ".."
+
+# every adapter family: the fuzz target drives the full registry so
+# coverage-guided input flows through real parsers, not just rgx-core
+[dependencies.rgx-adapters-archive]
+path = "../../rgx-adapters-archive"
+[dependencies.rgx-adapters-office]
+path = "../../rgx-adapters-office"
+[dependencies.rgx-adapters-threed]
+path = "../../rgx-adapters-threed"
+[dependencies.rgx-adapters-llm]
+path = "../../rgx-adapters-llm"
+[dependencies.rgx-adapters-media]
+path = "../../rgx-adapters-media"
+[dependencies.rgx-adapters-tabular]
+path = "../../rgx-adapters-tabular"
+[dependencies.rgx-adapters-docs]
+path = "../../rgx-adapters-docs"
+[dependencies.rgx-adapters-mail]
+path = "../../rgx-adapters-mail"
+[dependencies.rgx-adapters-inspect]
+path = "../../rgx-adapters-inspect"
+[dependencies.rgx-adapters-pdf]
+path = "../../rgx-adapters-pdf"
+
+[[bin]]
+name = "process"
+path = "fuzz_targets/process.rs"
+test = false
+doc = false
+bench = false

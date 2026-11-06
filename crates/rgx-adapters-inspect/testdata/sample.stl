@@ -1,0 +1,16 @@
+solid caixa
+  facet normal 0.0 0.0 1.0
+    outer loop
+      vertex 0.0 0.0 0.0
+      vertex 10.0 0.0 0.0
+      vertex 0.0 10.0 0.0
+    endloop
+  endfacet
+  facet normal 0.0 0.0 1.0
+    outer loop
+      vertex 10.0 0.0 0.0
+      vertex 10.0 10.0 0.0
+      vertex 0.0 10.0 0.0
+    endloop
+  endfacet
+endsolid caixa

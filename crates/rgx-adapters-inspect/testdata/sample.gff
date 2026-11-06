@@ -1,0 +1,7 @@
+##gff-version 3
+##sequence-region chr1 1 248956422
+chr1	sample	gene	11869	14409	.	+	.	ID=gene-BRCA1;Name=BRCA1;biotype=protein_coding
+chr1	sample	mRNA	11869	14409	.	+	.	ID=mrna-BRCA1;Parent=gene-BRCA1
+chr1	sample	exon	11869	12227	.	+	.	ID=exon-BRCA1-1;Parent=mrna-BRCA1
+chr1	sample	exon	12612	12721	.	+	.	ID=exon-BRCA1-2;Parent=mrna-BRCA1
+chr2	sample	gene	19930	21122	.	-	.	ID=gene-DMD;Name=DMD

@@ -1,0 +1,13 @@
+# EGM bootstrap configuration for this repository.
+#
+# Read by /egm-bootstrap and by scripts/check-egm-contracts.{sh,ps1}.
+# The values here are the single source of truth: a bootstrap run must not
+# pick a different contract filename, and a contract must not name a
+# different test command. The root README.md files are hand-written, so the
+# contracts are deliberately not called README.md. source_extensions is the
+# reviewed prune policy: the checker asserts its own SOURCE_SUFFIXES equals
+# this list, so the declared policy and the implementation cannot drift.
+target_filename=EGM.md
+artifact_dir=.egm
+verification=cargo test --release --locked --workspace
+source_extensions=.bash,.c,.cc,.cjs,.cpp,.cs,.cue,.cxx,.dart,.fs,.go,.gql,.graphql,.h,.hcl,.hh,.hpp,.java,.js,.jsx,.kt,.lean,.lua,.m,.mjs,.php,.prisma,.proto,.py,.rb,.rs,.scala,.sh,.sql,.swift,.tf,.thrift,.ts,.tsx,.zig
