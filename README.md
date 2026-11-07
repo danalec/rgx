@@ -48,9 +48,21 @@ rgx-only today.
 
 ## Install
 
+On Windows, from the installer or the [scoop](https://scoop.sh/) bucket
+[scoop-alts](https://github.com/danalec/scoop-alts) — `rgx` and the AMD Zen 4
+build `rgx-znver4`:
+
 ```powershell
 irm https://raw.githubusercontent.com/danalec/rgx/main/install.ps1 | iex
 ```
+
+```powershell
+scoop bucket add danalec_scoop-alts https://github.com/danalec/scoop-alts
+scoop install danalec_scoop-alts/rgx
+# scoop install danalec_scoop-alts/rgx-znver4   # Zen 4 build
+```
+
+Winget manifests are in `.winget/`.
 
 From crates.io, as a Rust tool:
 
@@ -60,12 +72,23 @@ cargo install rgx-search   # installs the `rgx` binary
 
 Linux tarballs (glibc, static musl, znver4), a FreeBSD tarball, and the
 `.deb` / `.rpm` / `.apk` / `.pkg.tar.zst` packages are on the
-[release page](https://github.com/danalec/rgx/releases/latest). Winget
-manifests are in `.winget/`. On FreeBSD, `install.sh` picks its channel from
-`uname -s` by itself:
+[release page](https://github.com/danalec/rgx/releases/latest). On FreeBSD,
+`install.sh` picks its channel from `uname -s` by itself:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/danalec/rgx/main/install.sh | bash
+```
+
+On Arch Linux and derivatives, two binary AUR packages install the prebuilt
+`rgx` from the release tarballs, so no Rust toolchain is needed:
+[rgx-search-bin](https://aur.archlinux.org/packages/rgx-search-bin) and the
+AMD Zen 4 build
+[rgx-search-znver4-bin](https://aur.archlinux.org/packages/rgx-search-znver4-bin).
+They conflict, because both install `/usr/bin/rgx`:
+
+```sh
+yay -S rgx-search-bin             # or paru -S rgx-search-bin
+# yay -S rgx-search-znver4-bin   # AMD Zen 4 build
 ```
 
 On macOS, from Homebrew — the formula is in `Formula/rgx.rb`, and
