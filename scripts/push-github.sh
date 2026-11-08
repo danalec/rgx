@@ -11,7 +11,7 @@
 #   1. re-points the winget manifests at the GitHub release URLs (commit)
 #   2. moves the rgx-v<version> tag onto that commit and pushes Forgejo first
 #   3. creates danalec/rgx on GitHub (--public or private) and pushes
-#   4. creates the GitHub release with the 9 assets already in .dist/
+#   4. creates the GitHub release with the 11 assets already in .dist/
 #   5. re-runs winget validate on the re-pointed manifests
 #
 # --flat pushes a mirror with one commit -- the tree as it is -- so a clone
@@ -47,9 +47,11 @@ GH="https://github.com/$GH_REPO"
 # over it would upload all of that to the world.
 ASSETS=(
   "$TAG-x86_64-windows.zip"
+  "$TAG-avx2-windows.zip"
   "$TAG-znver4-windows.zip"
   "$TAG-x86_64-linux-gnu.tar.gz"
   "$TAG-x86_64-linux-musl.tar.gz"
+  "$TAG-avx2-linux.tar.gz"
   "$TAG-znver4-linux.tar.gz"
   "rgx_${VERSION}_amd64.deb"
   "rgx-${VERSION}-1.x86_64.rpm"
@@ -97,7 +99,7 @@ run() { # run <description> <command...>
 git rev-parse "$TAG" >/dev/null 2>&1 || { echo "tag $TAG not found — run release-all.sh first"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "gh not authenticated"; exit 1; }
 N_ASSETS="$(ls .dist 2>/dev/null | wc -l | tr -d ' ')"
-[ "$N_ASSETS" -ge 9 ] || { echo ".dist/ has $N_ASSETS assets, expected 9 — run release-all.sh first"; exit 1; }
+[ "$N_ASSETS" -ge 11 ] || { echo ".dist/ has $N_ASSETS assets, expected 11 — run release-all.sh first"; exit 1; }
 
 echo ">> rgx $VERSION ($TAG) -> $GH"
 

@@ -4,20 +4,21 @@
     Install rgx on Windows.
 
 .DESCRIPTION
-    Downloads the rgx release zip (x86_64 generic or znver4), verifies its
-    SHA256, unpacks rgx.exe into the install directory and prepends it to
-    the user PATH.
+    Downloads the rgx release zip (x86_64 generic, avx2 or znver4), verifies
+    its SHA256, unpacks rgx.exe into the install directory and prepends it
+    to the user PATH.
 
 .EXAMPLE
     irm https://raw.githubusercontent.com/danalec/rgx/main/install.ps1 | iex
 
 .EXAMPLE
     .\install.ps1 -Channel znver4
+    .\install.ps1 -Channel avx2
 #>
 [CmdletBinding()]
 param(
-    # generic x86-64 build, or znver4 (AMD Zen 4 tuned)
-    [ValidateSet('x64', 'znver4')]
+    # generic x86-64 build, avx2 (AVX2 / x86-64-v3) or znver4 (AMD Zen 4)
+    [ValidateSet('x64', 'avx2', 'znver4')]
     [string]$Channel = 'x64',
 
     # install destination; default %LOCALAPPDATA%\Programs\rgx
@@ -38,10 +39,12 @@ Set-StrictMode -Version Latest
 
 $asset = switch ($Channel) {
     'x64'    { "$Version-x86_64-windows.zip" }
+    'avx2'   { "$Version-avx2-windows.zip" }
     'znver4' { "$Version-znver4-windows.zip" }
 }
 $expected = switch ($Channel) {
     'x64'    { 'DC6DB9D47766811179F749191C9BBDF31C95254CBAB981A09F4FF504D2B5EAFC' }
+    'avx2'   { '4F9FEC11EF3DB4E7EDAAF05ACC5E1AF0925E1320E59104DB205D09F3DB84F376' }
     'znver4' { 'D2178792BAB721E1867C26E2B8C5984EFD2FC0EE1B4D44A96D594C8CF5FF1FD5' }
 }
 

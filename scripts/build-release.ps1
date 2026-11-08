@@ -1,4 +1,5 @@
-# Build the shippable rgx binaries: portable x86-64 + Zen-4 (znver4) variant.
+# Build the shippable rgx binaries: portable x86-64, AVX2 (x86-64-v3) and
+# Zen-4 (znver4) variants.
 #
 #   powershell -File scripts/build-release.ps1            # clippy gate + tests + both zips
 #   powershell -File scripts/build-release.ps1 -SkipTests # iterate faster
@@ -9,6 +10,7 @@
 #
 # Outputs (.dist/):
 #   rgx-v<version>-x86_64-windows.zip        baseline, runs on any x86-64 CPU
+#   rgx-v<version>-avx2-windows.zip          tuned for AVX2 CPUs (x86-64-v3)
 #   rgx-v<version>-znver4-windows.zip        tuned for Zen 4 (incl. 7950X3D)
 # Each zip holds a directory named after the archive, with rgx.exe, the
 # README and the licences inside it. That is the layout the published asset
@@ -16,9 +18,12 @@
 # layout release-all.sh produces: an archive that packs the contents instead
 # would install nothing and look right.
 #
-# The znver4 variant sets ONLY -C target-cpu: the linker still comes from
-# .cargo/config.toml (lld-link). Measured effect (bench-linkers.ps1,
-# 7950X3D): ~+1% corpus, ~+2.5% big-file literal, ~+5% big-file regex.
+# Each tuned variant sets ONLY -C target-cpu, through the per-target
+# CARGO_TARGET_<triple>_RUSTFLAGS variable: build scripts and proc-macros
+# are host binaries and must not be built for a CPU the build machine may
+# not have. The linker still comes from .cargo/config.toml (lld-link).
+# Measured effect (bench-linkers.ps1, 7950X3D): ~+1% corpus, ~+2.5%
+# big-file literal, ~+5% big-file regex for znver4.
 param(
     [switch]$SkipTests,
     [string]$Version = ""
@@ -58,13 +63,17 @@ if (-not $SkipTests) {
 New-Item -ItemType Directory -Force .dist | Out-Null
 
 function Build-Variant([string]$name, [string]$targetDir, [string]$rustflags) {
-    $env:RUSTFLAGS = $rustflags
+    # The per-target variable, not RUSTFLAGS: RUSTFLAGS would also apply to
+    # host build scripts and proc-macros, which must run on this machine.
+    $hostTriple = (rustc -vV | Select-String '^host: ' | Select-Object -First 1).Line.Substring(6)
+    $rustflagsVar = "CARGO_TARGET_" + ($hostTriple.ToUpperInvariant() -replace '-', '_') + "_RUSTFLAGS"
+    Set-Item -Path "Env:$rustflagsVar" -Value $rustflags
     try {
         $env:CARGO_TARGET_DIR = $targetDir
         cargo build --release
         if ($LASTEXITCODE -ne 0) { throw "cargo build failed ($name)" }
     } finally {
-        Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue
+        Remove-Item "Env:$rustflagsVar" -ErrorAction SilentlyContinue
         Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
     }
     Join-Path $targetDir "release\rgx.exe"
@@ -73,18 +82,33 @@ function Build-Variant([string]$name, [string]$targetDir, [string]$rustflags) {
 # portable baseline (config.toml supplies lld-link; no target-cpu)
 $exeGeneric = Build-Variant "generic" (Join-Path $root "target") ""
 
+# AVX2 tuned: the x86-64-v3 baseline. A CPU older than Haswell cannot run
+# this binary.
+$exeAvx2 = Build-Variant "avx2" (Join-Path $root "target\release-avx2") "-C target-cpu=x86-64-v3"
+
 # Zen 4 tuned: AVX-512 + full Zen-4 scheduling. Baseline x86-64 CPUs must
 # NOT run this binary (illegal instruction at startup).
 $exeZnver4 = Build-Variant "znver4" (Join-Path $root "target\release-znver4") "-C target-cpu=znver4"
 
-# smoke both: version + a real search over the repo's own sources
-foreach ($exe in @($exeGeneric, $exeZnver4)) {
+# A variant built for an ISA this machine does not have cannot start here:
+# its smoke is skipped with the reason rather than reported as a bad build.
+function Test-CpuHas([string]$feature) {
+    try {
+        if ($feature -eq 'avx2') { return [System.Runtime.Intrinsics.X86.Avx2]::IsSupported }
+        if ($feature -eq 'avx512') { return [System.Runtime.Intrinsics.X86.Avx512F]::IsSupported }
+    } catch { return $false }
+    return $false
+}
+function Invoke-Smoke([string]$exe) {
     & $exe --version | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "smoke --version failed: $exe" }
     $hits = & $exe -c "fn main" src | Out-String
     if ($hits -notmatch "main.rs:\d+") { throw "smoke search failed: $exe" }
     Write-Host "smoke ok: $exe"
 }
+Invoke-Smoke $exeGeneric
+if (Test-CpuHas 'avx2') { Invoke-Smoke $exeAvx2 } else { Write-Host "smoke: skipped avx2 (no AVX2 on this machine)" }
+if (Test-CpuHas 'avx512') { Invoke-Smoke $exeZnver4 } else { Write-Host "smoke: skipped znver4 (no AVX-512 on this machine)" }
 
 function New-ReleaseZip([string]$exe, [string]$zipPath) {
     # The directory inside the archive is named after the archive, so the
@@ -122,8 +146,11 @@ function New-ReleaseZip([string]$exe, [string]$zipPath) {
 # .gitignore lists, and a plain `dist\` would be an unignored pile of
 # 3 MB binaries sitting in git status as work to review.
 $zipGeneric = ".dist\rgx-v$Version-x86_64-windows.zip"
+$zipAvx2    = ".dist\rgx-v$Version-avx2-windows.zip"
 $zipZnver4  = ".dist\rgx-v$Version-znver4-windows.zip"
 New-ReleaseZip $exeGeneric (Join-Path $root $zipGeneric)
+New-ReleaseZip $exeAvx2    (Join-Path $root $zipAvx2)
 New-ReleaseZip $exeZnver4  (Join-Path $root $zipZnver4)
 Write-Host "built: $zipGeneric"
+Write-Host "built: $zipAvx2"
 Write-Host "built: $zipZnver4"

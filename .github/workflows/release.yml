@@ -51,6 +51,11 @@ jobs:
             target: x86_64-pc-windows-msvc
             rustflags: "-C target-cpu=znver4"
             archive: zip
+          - asset: avx2-windows
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            rustflags: "-C target-cpu=x86-64-v3"
+            archive: zip
           - asset: aarch64-windows
             os: windows-11-arm
             target: aarch64-pc-windows-msvc
@@ -73,6 +78,12 @@ jobs:
             os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             rustflags: "-C target-cpu=znver4"
+            archive: tar.gz
+            build_image: rust:1.98-slim-bullseye
+          - asset: avx2-linux
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            rustflags: "-C target-cpu=x86-64-v3"
             archive: tar.gz
             build_image: rust:1.98-slim-bullseye
           - asset: x86_64-linux-musl
@@ -156,25 +167,43 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      # The per-target variable, not RUSTFLAGS: RUSTFLAGS reaches build
+      # scripts and proc-macros too, and those are host binaries that have to
+      # run on the runner -- which need not have the ISA the target asks for.
+      # The variant names the CPU it wants, and only the target's own
+      # artifacts are built for it.
+      - name: Set per-target rustflags
+        if: matrix.rustflags != '' && matrix.build_image == null && matrix.vm == null
+        shell: bash
+        run: |
+          var="CARGO_TARGET_$(printf '%s' '${{ matrix.target }}' | tr 'a-z-' 'A-Z_')_RUSTFLAGS"
+          echo "$var=${{ matrix.rustflags }}" >> "$GITHUB_ENV"
+
       - name: Build
         if: matrix.build_image == null && matrix.vm == null
         shell: bash
-        env:
-          RUSTFLAGS: ${{ matrix.rustflags }}
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       # The Linux build, inside the image that holds the glibc floor. The
-      # target directory is a named volume of its own, so the generic build
-      # and the znver4 one never share a cache -- cargo's fingerprint does
+      # target directory is a named volume of its own, so the generic, avx2
+      # and znver4 builds never share a cache -- cargo's fingerprint does
       # not know about the image, and a build made elsewhere would be taken
       # for a fresh one.
       - name: Build (Linux, in the glibc-floor image)
         if: matrix.build_image != null
         shell: bash
         run: |
+          # Per-target flags, passed into the container: RUSTFLAGS would also
+          # apply to the host build scripts, which this image must run.
+          flags_var="CARGO_TARGET_$(printf '%s' '${{ matrix.target }}' | tr 'a-z-' 'A-Z_')_RUSTFLAGS"
+          flags_args=()
+          if [ -n '${{ matrix.rustflags }}' ]; then
+            flags_args=(-e "$flags_var=${{ matrix.rustflags }}")
+          fi
           docker run --rm \
             -v "$PWD":/src -w /src \
             -v "rgx-target-${{ matrix.asset }}":/src/target \
+            "${flags_args[@]}" \
             "${{ matrix.build_image }}" bash -c "
               set -eo pipefail
               export DEBIAN_FRONTEND=noninteractive
@@ -187,7 +216,6 @@ jobs:
                   [ \$i = 5 ] && { echo 'rustup target add failed'; exit 1; }
                 done
               fi
-              if [ -n '${{ matrix.rustflags }}' ]; then export RUSTFLAGS='${{ matrix.rustflags }}'; fi
               cargo build --release --locked --target ${{ matrix.target }} > /tmp/cargo.log 2>&1 || { cat /tmp/cargo.log; exit 1; }
               tail -1 /tmp/cargo.log"
 
