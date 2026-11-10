@@ -7,7 +7,9 @@
 # Produces in <out-dir>:
 #   rgx-v<V>-x86_64-linux-gnu.tar.gz
 #   rgx-v<V>-x86_64-linux-musl.tar.gz
+#   rgx-v<V>-v2-linux.tar.gz
 #   rgx-v<V>-avx2-linux.tar.gz
+#   rgx-v<V>-v4-linux.tar.gz
 #   rgx-v<V>-znver4-linux.tar.gz
 #   rgx_<V>_amd64.deb          (Debian/Ubuntu, glibc >= 2.31)
 #   rgx-<V>-1.x86_64.rpm       (Fedora/RHEL)
@@ -111,38 +113,36 @@ docker run --rm "${DOCKER_NET_ARGS[@]}" \
 
 # Per-target flags, not RUSTFLAGS: the container also compiles host build
 # scripts and proc-macros, which must run on the machine doing the build.
-echo ">> building avx2 (AVX2 / x86-64-v3, same glibc floor)"
-docker run --rm "${DOCKER_NET_ARGS[@]}" \
-  -v "$SRC":/src -w /src \
-  -v rgx-target:/src/target \
-  -v rgx-registry:/usr/local/cargo/registry \
-  -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3" \
-  "$RUST_IMG" bash -c "
-    set -eo pipefail
-    cargo build --release --locked --target x86_64-unknown-linux-gnu --target-dir /src/target/avx2 > /tmp/cargo.log 2>&1 || { cat /tmp/cargo.log; exit 1; }
-    tail -1 /tmp/cargo.log"
-
-echo ">> building znver4 (Zen-4 tuned, same glibc floor)"
-docker run --rm "${DOCKER_NET_ARGS[@]}" \
-  -v "$SRC":/src -w /src \
-  -v rgx-target:/src/target \
-  -v rgx-registry:/usr/local/cargo/registry \
-  -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=znver4" \
-  "$RUST_IMG" bash -c "
-    set -eo pipefail
-    cargo build --release --locked --target x86_64-unknown-linux-gnu --target-dir /src/target/znver4 > /tmp/cargo.log 2>&1 || { cat /tmp/cargo.log; exit 1; }
-    tail -1 /tmp/cargo.log"
+# Each variant gets its own target directory inside the volume, so cargo's
+# fingerprint cannot serve a binary built for a different baseline.
+for spec in "v2:x86-64-v2" "avx2:x86-64-v3" "v4:x86-64-v4" "znver4:znver4"; do
+  name="${spec%%:*}"
+  cpu="${spec#*:}"
+  echo ">> building $name (target-cpu=$cpu, same glibc floor)"
+  docker run --rm "${DOCKER_NET_ARGS[@]}" \
+    -v "$SRC":/src -w /src \
+    -v rgx-target:/src/target \
+    -v rgx-registry:/usr/local/cargo/registry \
+    -e "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-C target-cpu=$cpu" \
+    "$RUST_IMG" bash -c "
+      set -eo pipefail
+      cargo build --release --locked --target x86_64-unknown-linux-gnu --target-dir /src/target/$name > /tmp/cargo.log 2>&1 || { cat /tmp/cargo.log; exit 1; }
+      tail -1 /tmp/cargo.log"
+done
 
 # Binaries live in the named volume; copy them out for staging/packaging.
 mkdir -p "$WORK/bins"
 docker run --rm "${DOCKER_NET_ARGS[@]}" -v rgx-target:/t -v "$WORK/bins":/out "$RUST_IMG" bash -c "
   cp /t/x86_64-unknown-linux-gnu/release/rgx /out/rgx-gnu
   cp /t/x86_64-unknown-linux-musl/release/rgx /out/rgx-musl
-  cp /t/avx2/x86_64-unknown-linux-gnu/release/rgx /out/rgx-avx2
-  cp /t/znver4/x86_64-unknown-linux-gnu/release/rgx /out/rgx-znver4"
+  for name in v2 avx2 v4 znver4; do
+    cp /t/\$name/x86_64-unknown-linux-gnu/release/rgx /out/rgx-\$name
+  done"
 GNU_BIN="$WORK/bins/rgx-gnu"
 MUSL_BIN="$WORK/bins/rgx-musl"
+V2_BIN="$WORK/bins/rgx-v2"
 AVX2_BIN="$WORK/bins/rgx-avx2"
+V4_BIN="$WORK/bins/rgx-v4"
 ZNV_BIN="$WORK/bins/rgx-znver4"
 for b in "$GNU_BIN" "$MUSL_BIN"; do
   "$b" --version >/dev/null || { echo "smoke failed: $b"; exit 1; }
@@ -150,11 +150,21 @@ done
 # A variant built for an ISA the docker host does not have cannot start
 # here; its smoke is skipped with the reason rather than called a bad build.
 cpu_has() { grep -qi "$1" /proc/cpuinfo 2>/dev/null; }
-if cpu_has avx2; then "$AVX2_BIN" --version >/dev/null || { echo "smoke failed: $AVX2_BIN"; exit 1; }
-else echo ">> smoke: skipped avx2 (no AVX2 on this machine)"; fi
-if cpu_has avx512; then "$ZNV_BIN" --version >/dev/null || { echo "smoke failed: $ZNV_BIN"; exit 1; }
-else echo ">> smoke: skipped znver4 (no AVX-512 on this machine)"; fi
+check_tuned() { # check_tuned <name> <binary> <cpuinfo-token> <reason>
+  local name="$1" bin="$2" token="$3" reason="$4"
+  if cpu_has "$token"; then
+    "$bin" --version >/dev/null || { echo "smoke failed: $name"; exit 1; }
+    echo ">> smoke ok: $name"
+  else
+    echo ">> smoke: skipped $name ($reason)"
+  fi
+}
+check_tuned v2      "$V2_BIN"   sse4_2  "no SSE4.2 on this machine"
+check_tuned avx2    "$AVX2_BIN" avx2    "no AVX2 on this machine"
+check_tuned v4      "$V4_BIN"   avx512  "no AVX-512 on this machine"
+check_tuned znver4  "$ZNV_BIN"  avx512  "no AVX-512 on this machine"
 echo ">> all binaries smoke ok"
 
 # --- packaging: tarballs + distro packages + verifies -------------------------
-bash "$SRC/scripts/package-linux.sh" "$SRC" "$GNU_BIN" "$MUSL_BIN" "$ZNV_BIN" "$VERSION" "$OUT_DIR" "$AVX2_BIN"
+bash "$SRC/scripts/package-linux.sh" "$SRC" "$GNU_BIN" "$MUSL_BIN" "$ZNV_BIN" \
+  "$VERSION" "$OUT_DIR" "$AVX2_BIN" "$V2_BIN" "$V4_BIN"

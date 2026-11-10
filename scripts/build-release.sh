@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# build-release.sh -- build the shippable rgx binaries: portable x86-64,
-# an AVX2 (x86-64-v3) variant and a Zen-4 (znver4) variant.
+# build-release.sh -- build the shippable rgx binaries: portable x86-64 and
+# four instruction-set tuned variants (x86-64-v2, AVX2 / x86-64-v3,
+# x86-64-v4 and Zen-4 / znver4).
 #
 # The Linux counterpart of scripts/build-release.ps1.
 #
@@ -13,7 +14,9 @@
 #
 # Outputs (.dist/local/):
 #   rgx-v<version>-x86_64-linux.tar.gz   baseline, runs on any x86-64 CPU
+#   rgx-v<version>-v2-linux.tar.gz       tuned for x86-64-v2 CPUs
 #   rgx-v<version>-avx2-linux.tar.gz     tuned for AVX2 CPUs (x86-64-v3)
+#   rgx-v<version>-v4-linux.tar.gz       tuned for AVX-512 CPUs (x86-64-v4)
 #   rgx-v<version>-znver4-linux.tar.gz   tuned for Zen 4 (incl. 7950X3D)
 # Each tarball packs rgx + README.md + COPYING + LICENSE-APACHE + NOTICE at
 # its root, matching the asset layout published on the forgejo release.
@@ -94,12 +97,11 @@ build_variant() {
 # portable baseline (no target-cpu)
 exe_generic=$(build_variant "generic" "$repo/target" "")
 
-# AVX2 tuned: the x86-64-v3 baseline. A CPU older than Haswell cannot run
-# this binary.
+# The four instruction-set tiers, in ascending baseline order. A CPU older
+# than the tier cannot run its binary (illegal instruction at startup).
+exe_v2=$(build_variant "v2" "$repo/target/release-v2" "-C target-cpu=x86-64-v2")
 exe_avx2=$(build_variant "avx2" "$repo/target/release-avx2" "-C target-cpu=x86-64-v3")
-
-# Zen 4 tuned: AVX-512 + full Zen-4 scheduling. Baseline x86-64 CPUs must
-# NOT run this binary (illegal instruction at startup).
+exe_v4=$(build_variant "v4" "$repo/target/release-v4" "-C target-cpu=x86-64-v4")
 exe_znver4=$(build_variant "znver4" "$repo/target/release-znver4" "-C target-cpu=znver4")
 
 # smoke: version + a real search over the repo's own sources. A variant
@@ -117,7 +119,9 @@ smoke() {
 }
 cpu_has() { grep -qi "$1" /proc/cpuinfo 2>/dev/null; }
 smoke "$exe_generic"
+if cpu_has sse4_2; then smoke "$exe_v2"; else echo "smoke: skipped v2 (no SSE4.2 on this machine)"; fi
 if cpu_has avx2; then smoke "$exe_avx2"; else echo "smoke: skipped avx2 (no AVX2 on this machine)"; fi
+if cpu_has avx512; then smoke "$exe_v4"; else echo "smoke: skipped v4 (no AVX-512 on this machine)"; fi
 if cpu_has avx512; then smoke "$exe_znver4"; else echo "smoke: skipped znver4 (no AVX-512 on this machine)"; fi
 
 # new_tarball <binary> <path>
@@ -141,11 +145,17 @@ new_tarball() {
 # script creates, and a plain `dist/` would be an unignored pile of
 # binaries sitting in git status as work to review.
 tar_generic="$out/rgx-v$version-x86_64-linux.tar.gz"
+tar_v2="$out/rgx-v$version-v2-linux.tar.gz"
 tar_avx2="$out/rgx-v$version-avx2-linux.tar.gz"
+tar_v4="$out/rgx-v$version-v4-linux.tar.gz"
 tar_znver4="$out/rgx-v$version-znver4-linux.tar.gz"
 new_tarball "$exe_generic" "$tar_generic"
+new_tarball "$exe_v2" "$tar_v2"
 new_tarball "$exe_avx2" "$tar_avx2"
+new_tarball "$exe_v4" "$tar_v4"
 new_tarball "$exe_znver4" "$tar_znver4"
 echo "built: $tar_generic"
+echo "built: $tar_v2"
 echo "built: $tar_avx2"
+echo "built: $tar_v4"
 echo "built: $tar_znver4"

@@ -46,15 +46,25 @@ jobs:
             os: windows-2022
             target: x86_64-pc-windows-msvc
             archive: zip
-          - asset: znver4-windows
+          - asset: v2-windows
             os: windows-2022
             target: x86_64-pc-windows-msvc
-            rustflags: "-C target-cpu=znver4"
+            rustflags: "-C target-cpu=x86-64-v2"
             archive: zip
           - asset: avx2-windows
             os: windows-2022
             target: x86_64-pc-windows-msvc
             rustflags: "-C target-cpu=x86-64-v3"
+            archive: zip
+          - asset: v4-windows
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            rustflags: "-C target-cpu=x86-64-v4"
+            archive: zip
+          - asset: znver4-windows
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            rustflags: "-C target-cpu=znver4"
             archive: zip
           - asset: aarch64-windows
             os: windows-11-arm
@@ -74,16 +84,28 @@ jobs:
             target: x86_64-unknown-linux-gnu
             archive: tar.gz
             build_image: rust:1.98-slim-bullseye
-          - asset: znver4-linux
+          - asset: v2-linux
             os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            rustflags: "-C target-cpu=znver4"
+            rustflags: "-C target-cpu=x86-64-v2"
             archive: tar.gz
             build_image: rust:1.98-slim-bullseye
           - asset: avx2-linux
             os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             rustflags: "-C target-cpu=x86-64-v3"
+            archive: tar.gz
+            build_image: rust:1.98-slim-bullseye
+          - asset: v4-linux
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            rustflags: "-C target-cpu=x86-64-v4"
+            archive: tar.gz
+            build_image: rust:1.98-slim-bullseye
+          - asset: znver4-linux
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            rustflags: "-C target-cpu=znver4"
             archive: tar.gz
             build_image: rust:1.98-slim-bullseye
           - asset: x86_64-linux-musl
@@ -185,10 +207,10 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       # The Linux build, inside the image that holds the glibc floor. The
-      # target directory is a named volume of its own, so the generic, avx2
-      # and znver4 builds never share a cache -- cargo's fingerprint does
-      # not know about the image, and a build made elsewhere would be taken
-      # for a fresh one.
+      # target directory is a named volume of its own, so the generic, v2,
+      # avx2, v4 and znver4 builds never share a cache -- cargo's fingerprint
+      # does not know about the image, and a build made elsewhere would be
+      # taken for a fresh one.
       - name: Build (Linux, in the glibc-floor image)
         if: matrix.build_image != null
         shell: bash

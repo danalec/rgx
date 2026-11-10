@@ -6,7 +6,7 @@
 #   ./scripts/rewrite-digests.sh --from-release [tag]   # from the GitHub release
 #   ./scripts/rewrite-digests.sh --check [tag]          # say whether they are right
 #
-# install.ps1 pins the three Windows zips and install.sh pins the five unix
+# install.ps1 pins the five Windows zips and install.sh pins the seven unix
 # tarballs, and both refuse a download whose digest is not the one written
 # there. The pins are release data and the release owns them: they are
 # rewritten from the artifacts that are about to be published, never by
@@ -93,32 +93,41 @@ SH="$INSTALLERS/install.sh"
 
 # --- the Windows pair -----------------------------------------------------------
 SHA_X64="$(sha256 "$DIST/$TAG-x86_64-windows.zip")"
+SHA_V2="$(sha256 "$DIST/$TAG-v2-windows.zip")"
 SHA_AVX2="$(sha256 "$DIST/$TAG-avx2-windows.zip")"
+SHA_V4="$(sha256 "$DIST/$TAG-v4-windows.zip")"
 SHA_ZN="$(sha256 "$DIST/$TAG-znver4-windows.zip")"
 sed -i \
   -e "s/^\( *'x64' *{ *'\)[A-F0-9]\{64\}\(' *}\)$/\1$SHA_X64\2/" \
+  -e "s/^\( *'v2' *{ *'\)[A-F0-9]\{64\}\(' *}\)$/\1$SHA_V2\2/" \
   -e "s/^\( *'avx2' *{ *'\)[A-F0-9]\{64\}\(' *}\)$/\1$SHA_AVX2\2/" \
+  -e "s/^\( *'v4' *{ *'\)[A-F0-9]\{64\}\(' *}\)$/\1$SHA_V4\2/" \
   -e "s/^\( *'znver4' *{ *'\)[A-F0-9]\{64\}\(' *}\)$/\1$SHA_ZN\2/" \
   "$PS1"
 # A sed that matched nothing is a silent no-op, and the installer breaks at
 # a user's machine rather than here.
 grep -q "$SHA_X64"  "$PS1" || { echo "install.ps1 x64 digest not rewritten" >&2; exit 1; }
+grep -q "$SHA_V2"   "$PS1" || { echo "install.ps1 v2 digest not rewritten" >&2; exit 1; }
 grep -q "$SHA_AVX2" "$PS1" || { echo "install.ps1 avx2 digest not rewritten" >&2; exit 1; }
+grep -q "$SHA_V4"   "$PS1" || { echo "install.ps1 v4 digest not rewritten" >&2; exit 1; }
 grep -q "$SHA_ZN"   "$PS1" || { echo "install.ps1 znver4 digest not rewritten" >&2; exit 1; }
-echo ">> install.ps1: x64 $SHA_X64, avx2 $SHA_AVX2, znver4 $SHA_ZN"
+echo ">> install.ps1: x64 $SHA_X64, v2 $SHA_V2, avx2 $SHA_AVX2, v4 $SHA_V4, znver4 $SHA_ZN"
 
-# --- the unix five --------------------------------------------------------------
+# --- the unix seven -------------------------------------------------------------
 # The unix installer pins one line per channel, the digest in uppercase hex.
 # FreeBSD is one of them, and it is the one the release workflow builds inside
 # a VM: a channel the rewriter does not know is a channel whose pin stays at
 # the previous release, and the installer refuses its own release on the one
-# platform whose archive is not built on a runner. The avx2 and znver4
-# channels are the SIMD variants; both are built by the same release matrix.
-for chan in gnu musl avx2 znver4 freebsd; do
+# platform whose archive is not built on a runner. The v2, avx2, v4 and
+# znver4 channels are the instruction-set tuned variants; all four are built
+# by the same release matrix.
+for chan in gnu musl v2 avx2 v4 znver4 freebsd; do
   case "$chan" in
     gnu)     art="$DIST/$TAG-x86_64-linux-gnu.tar.gz" ;;
     musl)    art="$DIST/$TAG-x86_64-linux-musl.tar.gz" ;;
+    v2)      art="$DIST/$TAG-v2-linux.tar.gz" ;;
     avx2)    art="$DIST/$TAG-avx2-linux.tar.gz" ;;
+    v4)      art="$DIST/$TAG-v4-linux.tar.gz" ;;
     znver4)  art="$DIST/$TAG-znver4-linux.tar.gz" ;;
     freebsd) art="$DIST/$TAG-x86_64-freebsd.tar.gz" ;;
   esac
@@ -132,7 +141,7 @@ for chan in gnu musl avx2 znver4 freebsd; do
   # installer that refuses its own release.
   grep -q "$sha" "$SH" || { echo "install.sh $chan digest not rewritten" >&2; exit 1; }
 done
-echo ">> install.sh: gnu, musl, avx2, znver4, freebsd"
+echo ">> install.sh: gnu, musl, v2, avx2, v4, znver4, freebsd"
 
 # --- the pinned version ---------------------------------------------------------
 # The two installers pin the version as well as the digest, and the pin is

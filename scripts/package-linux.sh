@@ -3,11 +3,12 @@
 # artifacts: tarballs, distro packages (deb/rpm/apk/pacman), each install-
 # verified in a container of its own distro. Requires only docker.
 #
-#   ./package-linux.sh <src-dir> <gnu-bin> <musl-bin> <znver4-bin> <version> <out-dir> [<avx2-bin>]
+#   ./package-linux.sh <src-dir> <gnu-bin> <musl-bin> <znver4-bin> <version> <out-dir> [<avx2-bin>] [<v2-bin>] [<v4-bin>]
 #
-# The optional <avx2-bin> adds the AVX2 (x86-64-v3) tarball. The CI's
-# packages job passes six arguments and stays on the three distro binaries;
-# the local docker release passes seven and ships the fourth archive too.
+# The optional trailing binaries add the instruction-set tuned tarballs:
+# <avx2-bin> (x86-64-v3), <v2-bin> (x86-64-v2) and <v4-bin> (x86-64-v4).
+# The CI's packages job passes six arguments and stays on the three distro
+# binaries; the local docker release passes nine and ships every archive.
 #
 # <src-dir> must contain the docs that ship beside the binary
 # (README.md COPYING LICENSE-APACHE NOTICE).
@@ -17,13 +18,15 @@
 # glibc both escaped `cargo build` and were caught here).
 set -euo pipefail
 
-SRC_DIR="$(cd "${1:?usage: package-linux.sh <src-dir> <gnu-bin> <musl-bin> <znver4-bin> <version> <out-dir> [<avx2-bin>]}" && pwd)"
+SRC_DIR="$(cd "${1:?usage: package-linux.sh <src-dir> <gnu-bin> <musl-bin> <znver4-bin> <version> <out-dir> [<avx2-bin>] [<v2-bin>] [<v4-bin>]}" && pwd)"
 GNU_BIN="${2:?missing gnu binary}"
 MUSL_BIN="${3:?missing musl binary}"
 ZNV_BIN="${4:?missing znver4 binary}"
 VERSION="${5:?missing version}"
 OUT_DIR="${6:?missing out-dir}"
 AVX2_BIN="${7:-}"
+V2_BIN="${8:-}"
+V4_BIN="${9:-}"
 mkdir -p "$OUT_DIR"; OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 TAG="rgx-v$VERSION"
 
@@ -46,9 +49,11 @@ fi
 for b in "$GNU_BIN" "$MUSL_BIN" "$ZNV_BIN"; do
   [ -x "$b" ] || { echo "missing or not executable: $b"; exit 1; }
 done
-if [ -n "$AVX2_BIN" ]; then
-  [ -x "$AVX2_BIN" ] || { echo "missing or not executable: $AVX2_BIN"; exit 1; }
-fi
+for b in "$AVX2_BIN" "$V2_BIN" "$V4_BIN"; do
+  if [ -n "$b" ]; then
+    [ -x "$b" ] || { echo "missing or not executable: $b"; exit 1; }
+  fi
+done
 echo ">> binaries present"
 
 # --- tarballs ----------------------------------------------------------------
@@ -60,8 +65,14 @@ stage_docs() {
 }
 stage_docs "$PKG/$TAG-x86_64-linux-gnu" "$GNU_BIN"
 stage_docs "$PKG/$TAG-x86_64-linux-musl" "$MUSL_BIN"
+if [ -n "$V2_BIN" ]; then
+  stage_docs "$PKG/$TAG-v2-linux" "$V2_BIN"
+fi
 if [ -n "$AVX2_BIN" ]; then
   stage_docs "$PKG/$TAG-avx2-linux" "$AVX2_BIN"
+fi
+if [ -n "$V4_BIN" ]; then
+  stage_docs "$PKG/$TAG-v4-linux" "$V4_BIN"
 fi
 stage_docs "$PKG/$TAG-znver4-linux" "$ZNV_BIN"
 for d in "$PKG"/*/; do

@@ -4,8 +4,8 @@
 #
 #   ./scripts/release-all.sh [--skip-tests] [--dry-run] [--no-commit]
 #
-# Pipeline: gate (fmt/clippy/tests) -> Windows zips (x86_64 + znver4)
-# -> Linux (ssh to the docker host, build-linux.sh) -> publish (tag +
+# Pipeline: gate (fmt/clippy/tests) -> Windows zips (x86_64 + four tuned
+# tiers) -> Linux (ssh to the docker host, build-linux.sh) -> publish (tag +
 # forgejo release + assets + winget manifests + validate + commit).
 set -euo pipefail
 
@@ -56,9 +56,17 @@ fi
 # --- 1. Windows zips -----------------------------------------------------------
 echo ">> windows: x86_64"
 cargo build --release --locked 2>&1 | tail -1
-echo ">> windows: znver4"
-RUSTFLAGS="-C target-cpu=znver4" CARGO_TARGET_DIR=target/release-znver4 \
-  cargo build --release --locked 2>&1 | tail -1
+# The four tuned tiers, each with its own target directory so cargo's
+# fingerprint cannot serve a binary built for a different baseline. The
+# per-target variable keeps the flags off host build scripts and proc-macros.
+for spec in "v2:x86-64-v2" "avx2:x86-64-v3" "v4:x86-64-v4" "znver4:znver4"; do
+  name="${spec%%:*}"
+  cpu="${spec#*:}"
+  echo ">> windows: $name (target-cpu=$cpu)"
+  var="CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS"
+  env "$var=-C target-cpu=$cpu" CARGO_TARGET_DIR="target/release-$name" \
+    cargo build --release --locked 2>&1 | tail -1
+done
 
 mkdir -p .dist
 make_zip() { # make_zip <exe> <name>
@@ -80,7 +88,9 @@ make_zip() { # make_zip <exe> <name>
   echo ">> built .dist/$2.zip"
 }
 make_zip target/release/rgx.exe "$TAG-x86_64-windows"
-make_zip target/release-znver4/release/rgx.exe "$TAG-znver4-windows"
+for name in v2 avx2 v4 znver4; do
+  make_zip "target/release-$name/release/rgx.exe" "$TAG-$name-windows"
+done
 
 # smoke
 ./target/release/rgx.exe --version >/dev/null
@@ -117,9 +127,9 @@ AUTH=(-u "$FUSER:$TOKEN")
 
 BODY="Search inside everything — PDFs, Office documents, archives, 3D models, LLM checkpoints, databases, e-mail. Ripgrep-compatible, adapters in-process.
 
-**Windows** (portable zip): \`$TAG-x86_64-windows.zip\` (generic x86-64), \`$TAG-znver4-windows.zip\` (AMD Zen 4)
+**Windows** (portable zip): \`$TAG-x86_64-windows.zip\` (generic x86-64), \`$TAG-v2-windows.zip\` (x86-64-v2), \`$TAG-avx2-windows.zip\` (AVX2 / v3), \`$TAG-v4-windows.zip\` (AVX-512 / v4), \`$TAG-znver4-windows.zip\` (AMD Zen 4)
 
-**Linux**: \`$TAG-x86_64-linux-gnu.tar.gz\` (glibc ≥ 2.31), \`$TAG-x86_64-linux-musl.tar.gz\` (static), \`$TAG-znver4-linux.tar.gz\` (Zen 4); distro packages: \`.deb\` (Debian/Ubuntu), \`.rpm\` (Fedora/RHEL), \`.apk\` (Alpine), \`.pkg.tar.zst\` (Arch) — each install-tested in its own container.
+**Linux**: \`$TAG-x86_64-linux-gnu.tar.gz\` (glibc ≥ 2.31), \`$TAG-x86_64-linux-musl.tar.gz\` (static), and the same four tuned tiers (\`-v2-linux\`, \`-avx2-linux\`, \`-v4-linux\`, \`-znver4-linux\`); distro packages: \`.deb\` (Debian/Ubuntu), \`.rpm\` (Fedora/RHEL), \`.apk\` (Alpine), \`.pkg.tar.zst\` (Arch) — each install-tested in its own container.
 
 Apache-2.0."
 

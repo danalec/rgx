@@ -1,7 +1,7 @@
-# Build the shippable rgx binaries: portable x86-64, AVX2 (x86-64-v3) and
-# Zen-4 (znver4) variants.
+# Build the shippable rgx binaries: portable x86-64 and four instruction-set
+# tuned variants (x86-64-v2, AVX2 / x86-64-v3, x86-64-v4, Zen-4 / znver4).
 #
-#   powershell -File scripts/build-release.ps1            # clippy gate + tests + both zips
+#   powershell -File scripts/build-release.ps1            # clippy gate + tests + five zips
 #   powershell -File scripts/build-release.ps1 -SkipTests # iterate faster
 #
 # Unless -SkipTests, the release fails on any clippy warning
@@ -10,7 +10,9 @@
 #
 # Outputs (.dist/):
 #   rgx-v<version>-x86_64-windows.zip        baseline, runs on any x86-64 CPU
+#   rgx-v<version>-v2-windows.zip            tuned for x86-64-v2 CPUs
 #   rgx-v<version>-avx2-windows.zip          tuned for AVX2 CPUs (x86-64-v3)
+#   rgx-v<version>-v4-windows.zip            tuned for AVX-512 CPUs (x86-64-v4)
 #   rgx-v<version>-znver4-windows.zip        tuned for Zen 4 (incl. 7950X3D)
 # Each zip holds a directory named after the archive, with rgx.exe, the
 # README and the licences inside it. That is the layout the published asset
@@ -82,18 +84,18 @@ function Build-Variant([string]$name, [string]$targetDir, [string]$rustflags) {
 # portable baseline (config.toml supplies lld-link; no target-cpu)
 $exeGeneric = Build-Variant "generic" (Join-Path $root "target") ""
 
-# AVX2 tuned: the x86-64-v3 baseline. A CPU older than Haswell cannot run
-# this binary.
+# The four instruction-set tiers, in ascending baseline order. A CPU older
+# than the tier cannot run its binary (illegal instruction at startup).
+$exeV2 = Build-Variant "v2" (Join-Path $root "target\release-v2") "-C target-cpu=x86-64-v2"
 $exeAvx2 = Build-Variant "avx2" (Join-Path $root "target\release-avx2") "-C target-cpu=x86-64-v3"
-
-# Zen 4 tuned: AVX-512 + full Zen-4 scheduling. Baseline x86-64 CPUs must
-# NOT run this binary (illegal instruction at startup).
+$exeV4 = Build-Variant "v4" (Join-Path $root "target\release-v4") "-C target-cpu=x86-64-v4"
 $exeZnver4 = Build-Variant "znver4" (Join-Path $root "target\release-znver4") "-C target-cpu=znver4"
 
 # A variant built for an ISA this machine does not have cannot start here:
 # its smoke is skipped with the reason rather than reported as a bad build.
 function Test-CpuHas([string]$feature) {
     try {
+        if ($feature -eq 'sse42') { return [System.Runtime.Intrinsics.X86.Sse42]::IsSupported }
         if ($feature -eq 'avx2') { return [System.Runtime.Intrinsics.X86.Avx2]::IsSupported }
         if ($feature -eq 'avx512') { return [System.Runtime.Intrinsics.X86.Avx512F]::IsSupported }
     } catch { return $false }
@@ -107,7 +109,9 @@ function Invoke-Smoke([string]$exe) {
     Write-Host "smoke ok: $exe"
 }
 Invoke-Smoke $exeGeneric
+if (Test-CpuHas 'sse42') { Invoke-Smoke $exeV2 } else { Write-Host "smoke: skipped v2 (no SSE4.2 on this machine)" }
 if (Test-CpuHas 'avx2') { Invoke-Smoke $exeAvx2 } else { Write-Host "smoke: skipped avx2 (no AVX2 on this machine)" }
+if (Test-CpuHas 'avx512') { Invoke-Smoke $exeV4 } else { Write-Host "smoke: skipped v4 (no AVX-512 on this machine)" }
 if (Test-CpuHas 'avx512') { Invoke-Smoke $exeZnver4 } else { Write-Host "smoke: skipped znver4 (no AVX-512 on this machine)" }
 
 function New-ReleaseZip([string]$exe, [string]$zipPath) {
@@ -146,11 +150,17 @@ function New-ReleaseZip([string]$exe, [string]$zipPath) {
 # .gitignore lists, and a plain `dist\` would be an unignored pile of
 # 3 MB binaries sitting in git status as work to review.
 $zipGeneric = ".dist\rgx-v$Version-x86_64-windows.zip"
+$zipV2      = ".dist\rgx-v$Version-v2-windows.zip"
 $zipAvx2    = ".dist\rgx-v$Version-avx2-windows.zip"
+$zipV4      = ".dist\rgx-v$Version-v4-windows.zip"
 $zipZnver4  = ".dist\rgx-v$Version-znver4-windows.zip"
 New-ReleaseZip $exeGeneric (Join-Path $root $zipGeneric)
+New-ReleaseZip $exeV2      (Join-Path $root $zipV2)
 New-ReleaseZip $exeAvx2    (Join-Path $root $zipAvx2)
+New-ReleaseZip $exeV4      (Join-Path $root $zipV4)
 New-ReleaseZip $exeZnver4  (Join-Path $root $zipZnver4)
 Write-Host "built: $zipGeneric"
+Write-Host "built: $zipV2"
 Write-Host "built: $zipAvx2"
+Write-Host "built: $zipV4"
 Write-Host "built: $zipZnver4"

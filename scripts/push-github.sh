@@ -11,7 +11,7 @@
 #   1. re-points the winget manifests at the GitHub release URLs (commit)
 #   2. moves the rgx-v<version> tag onto that commit and pushes Forgejo first
 #   3. creates danalec/rgx on GitHub (--public or private) and pushes
-#   4. creates the GitHub release with the 11 assets already in .dist/
+#   4. creates the GitHub release with the 15 assets already in .dist/
 #   5. re-runs winget validate on the re-pointed manifests
 #
 # --flat pushes a mirror with one commit -- the tree as it is -- so a clone
@@ -47,11 +47,15 @@ GH="https://github.com/$GH_REPO"
 # over it would upload all of that to the world.
 ASSETS=(
   "$TAG-x86_64-windows.zip"
+  "$TAG-v2-windows.zip"
   "$TAG-avx2-windows.zip"
+  "$TAG-v4-windows.zip"
   "$TAG-znver4-windows.zip"
   "$TAG-x86_64-linux-gnu.tar.gz"
   "$TAG-x86_64-linux-musl.tar.gz"
+  "$TAG-v2-linux.tar.gz"
   "$TAG-avx2-linux.tar.gz"
+  "$TAG-v4-linux.tar.gz"
   "$TAG-znver4-linux.tar.gz"
   "rgx_${VERSION}_amd64.deb"
   "rgx-${VERSION}-1.x86_64.rpm"
@@ -99,7 +103,7 @@ run() { # run <description> <command...>
 git rev-parse "$TAG" >/dev/null 2>&1 || { echo "tag $TAG not found — run release-all.sh first"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "gh not authenticated"; exit 1; }
 N_ASSETS="$(ls .dist 2>/dev/null | wc -l | tr -d ' ')"
-[ "$N_ASSETS" -ge 11 ] || { echo ".dist/ has $N_ASSETS assets, expected 11 — run release-all.sh first"; exit 1; }
+[ "$N_ASSETS" -ge 15 ] || { echo ".dist/ has $N_ASSETS assets, expected 15 — run release-all.sh first"; exit 1; }
 
 echo ">> rgx $VERSION ($TAG) -> $GH"
 
@@ -346,12 +350,12 @@ else
   run "push github tag" git push -f github "$TAG"
 fi
 
-# --- 4. GitHub release with the same 9 assets, plus the macOS ones -------------
+# --- 4. GitHub release with the 15 assets, plus the macOS ones -----------------
 BODY="Search inside everything — PDFs, Office documents, archives, 3D models, LLM checkpoints, databases, e-mail. Ripgrep-compatible, adapters in-process.
 
-**Windows** (portable zip): \`$TAG-x86_64-windows.zip\` (generic x86-64), \`$TAG-znver4-windows.zip\` (AMD Zen 4)
+**Windows** (portable zip): \`$TAG-x86_64-windows.zip\` (generic x86-64), \`$TAG-v2-windows.zip\` (x86-64-v2), \`$TAG-avx2-windows.zip\` (AVX2 / v3), \`$TAG-v4-windows.zip\` (AVX-512 / v4), \`$TAG-znver4-windows.zip\` (AMD Zen 4)
 
-**Linux**: \`$TAG-x86_64-linux-gnu.tar.gz\` (glibc ≥ 2.31), \`$TAG-x86_64-linux-musl.tar.gz\` (static), \`$TAG-znver4-linux.tar.gz\` (Zen 4); distro packages: \`.deb\` (Debian/Ubuntu), \`.rpm\` (Fedora/RHEL), \`.apk\` (Alpine), \`.pkg.tar.zst\` (Arch) — each install-tested in its own container.
+**Linux**: \`$TAG-x86_64-linux-gnu.tar.gz\` (glibc ≥ 2.31), \`$TAG-x86_64-linux-musl.tar.gz\` (static), and the four tuned tiers (\`-v2-linux\`, \`-avx2-linux\`, \`-v4-linux\`, \`-znver4-linux\`); distro packages: \`.deb\` (Debian/Ubuntu), \`.rpm\` (Fedora/RHEL), \`.apk\` (Alpine), \`.pkg.tar.zst\` (Arch) — each install-tested in its own container.
 
 **macOS**: \`$TAG-aarch64-macos.tar.gz\` (Apple Silicon), \`$TAG-x86_64-macos.tar.gz\` (Intel) — the archives Homebrew installs from.
 

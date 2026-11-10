@@ -111,6 +111,9 @@ body="Search inside everything — PDFs, Office documents, archives, 3D models, 
 **Linux builds** (portable tarball: rgx + README + licences):
 - \`$tag-x86_64-linux-gnu.tar.gz\` — glibc, runs on any x86-64 CPU
 - \`$tag-x86_64-linux-musl.tar.gz\` — static, runs anywhere
+- \`$tag-v2-linux.tar.gz\` — tuned for x86-64-v2 CPUs
+- \`$tag-avx2-linux.tar.gz\` — tuned for AVX2 CPUs (x86-64-v3)
+- \`$tag-v4-linux.tar.gz\` — tuned for AVX-512 CPUs (x86-64-v4)
 - \`$tag-znver4-linux.tar.gz\` — tuned for AMD Zen 4 (znver4)
 
 Feature-parity with the rga adapter set: archives (zip/7z/tar/cpio/decompress),

@@ -22,12 +22,12 @@
 # wrong on the day after the release -- which is exactly how install.ps1's
 # two pins came to be rewritten by the release flow in the first place.
 #
-# The channels are the five artifacts the release carries for unix: the glibc
-# build, the static musl build, the AVX2 tuned one, the Zen-4 tuned one, and
-# the FreeBSD build. The AVX2 build needs an AVX2 CPU (Haswell or newer) and
-# the Zen-4 build a Zen-4 CPU; the generic one runs anywhere. FreeBSD has one
-# artifact and no glibc/musl choice, so its name is the default there -- and
-# `gnu` is the default everywhere else.
+# The channels are the seven artifacts the release carries for unix: the glibc
+# build, the static musl build, four instruction-set tuned ones (x86-64-v2,
+# AVX2 / x86-64-v3, x86-64-v4 and Zen 4), and the FreeBSD build. Each tuned
+# build needs a CPU with those instructions; the generic one runs anywhere.
+# FreeBSD has one artifact and no glibc/musl choice, so its name is the
+# default there -- and `gnu` is the default everywhere else.
 set -u
 
 channel="gnu"
@@ -47,7 +47,9 @@ skip_checksum=0
 declare -A EXPECTED=(
     [gnu]="A47153015AE6136FB31B4CD57424D84323AAD655D93A61C838820A5062EBCD38"
     [musl]="7059AF7F7D92D2347055B6B6C5D2FE35F4DD5A2E4CB3BE977BE113C749E6DA6B"
+    [v2]="A895E9BAABE96858B39759194C2E2F4989B95A05C34A5F20E3BEA3512DFFBA85"
     [avx2]="F1332BA39CCAD2B4DF3274C5103652798F14C9D085E7AB41EA5A23209028A45E"
+    [v4]="CB88729D47C2A1175D59404BAE298D1B027B4BC01B01D0B97B9611C150C3E259"
     [znver4]="F868DA1080B3CFD49AB2940BA716BB01C3CEE3B897ACB7A9650D0621CCD2AD4E"
     [freebsd]="68EBACF8F2313F6E659F661CF3BADADCE92D27FE7542E8318C88707C2EE9CF4F"
 )
@@ -71,10 +73,12 @@ done
 case "$channel" in
     gnu)     asset="$version-x86_64-linux-gnu.tar.gz" ;;
     musl)    asset="$version-x86_64-linux-musl.tar.gz" ;;
+    v2)      asset="$version-v2-linux.tar.gz" ;;
     avx2)    asset="$version-avx2-linux.tar.gz" ;;
+    v4)      asset="$version-v4-linux.tar.gz" ;;
     znver4)  asset="$version-znver4-linux.tar.gz" ;;
     freebsd) asset="$version-x86_64-freebsd.tar.gz" ;;
-    *) echo "unknown channel: $channel (gnu, musl, avx2, znver4, freebsd)" >&2; exit 2 ;;
+    *) echo "unknown channel: $channel (gnu, musl, v2, avx2, v4, znver4, freebsd)" >&2; exit 2 ;;
 esac
 expected="${EXPECTED[$channel]}"
 

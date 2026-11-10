@@ -4,14 +4,14 @@
 #   powershell -File scripts/publish-release.ps1 -SkipTests   # trust the build
 #   powershell -File scripts/publish-release.ps1 -DryRun      # show, don't touch
 #
-# Pipeline: build the three zips -> tag rgx-v<version> + push -> create/update the
+# Pipeline: build the five zips -> tag rgx-v<version> + push -> create/update the
 # forgejo release and (re)upload assets -> refresh the winget manifests
 # (version, sha256, date, URLs) -> winget validate -> optional -Commit of the
 # manifest changes. The forgejo API uses the same stored git credentials
 # (`git credential fill`); no tokens live in this script.
 #
 # Version comes from Cargo.toml unless -Version is given. Winget ships the
-# generic build only; the avx2 and znver4 zips ride the release page.
+# generic build only; the v2, avx2, v4 and znver4 zips ride the release page.
 param(
     [string]$Version = "",
     [switch]$SkipTests,
@@ -47,7 +47,9 @@ if ($LASTEXITCODE -ne 0) { throw "build failed" }
 # and the one .gitignore lists -- not in dist/, which nothing creates and
 # which nothing ignores.
 $zipGeneric = Get-Item ".dist\$tag-x86_64-windows.zip"
+$zipV2      = Get-Item ".dist\$tag-v2-windows.zip"
 $zipAvx2    = Get-Item ".dist\$tag-avx2-windows.zip"
+$zipV4      = Get-Item ".dist\$tag-v4-windows.zip"
 $zipZnver4  = Get-Item ".dist\$tag-znver4-windows.zip"
 
 # --- 2. tag + push ---------------------------------------------------------
@@ -83,7 +85,9 @@ Search inside everything — PDFs, Office documents, archives, 3D models, LLM ch
 
 **Windows builds** (portable zip: rgx.exe + README + licenses):
 - ``$tag-x86_64-windows.zip`` — generic x86-64
+- ``$tag-v2-windows.zip`` — tuned for x86-64-v2 CPUs
 - ``$tag-avx2-windows.zip`` — tuned for AVX2 CPUs (x86-64-v3)
+- ``$tag-v4-windows.zip`` — tuned for AVX-512 CPUs (x86-64-v4)
 - ``$tag-znver4-windows.zip`` — tuned for AMD Zen 4 (znver4)
 
 Feature-parity with the rga adapter set: archives (zip/7z/tar/cpio/decompress),
@@ -93,8 +97,10 @@ external tools (ffmpeg/ffprobe, tesseract, soffice).
 Apache-2.0.
 "@
 
+$zips = @($zipGeneric, $zipV2, $zipAvx2, $zipV4, $zipZnver4)
+
 if ($DryRun) {
-    Write-Host "[dry-run] create/patch release $tag and upload $($zipGeneric.Name), $($zipAvx2.Name), $($zipZnver4.Name)"
+    Write-Host "[dry-run] create/patch release $tag and upload $(($zips | ForEach-Object Name) -join ', ')"
 } else {
     if (-not $release) {
         $release = Invoke-RestMethod -Headers $auth -Method Post "$repoApi/releases" `
@@ -107,7 +113,7 @@ if ($DryRun) {
                 (@{ name = "rgx v$Version"; body = $body } | ConvertTo-Json -Compress)))
     }
 
-    foreach ($zip in @($zipGeneric, $zipAvx2, $zipZnver4)) {
+    foreach ($zip in $zips) {
         $stale = $release.assets | Where-Object { $_.name -eq $zip.Name }
         if ($stale) {
             Invoke-RestMethod -Headers $auth -Method Delete "$repoApi/releases/$($release.id)/assets/$($stale.id)" | Out-Null

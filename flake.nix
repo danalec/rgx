@@ -45,9 +45,17 @@
       # compiler's baseline for CPUs that have the features.
       tuned = {
         x86_64-linux = {
+          rgx-search-v2 = {
+            file = "rgx-v${version}-v2-linux.tar.gz";
+            hash = "sha256-qJXpuqvpaFizl1kZTC4vSYm5WgXDSl8g476jUS3/uoU=";
+          };
           rgx-search-avx2 = {
             file = "rgx-v${version}-avx2-linux.tar.gz";
             hash = "sha256-8TMro5zK0rTfMnTFEDZSeY8UydCF56tB6lojIJAopF4=";
+          };
+          rgx-search-v4 = {
+            file = "rgx-v${version}-v4-linux.tar.gz";
+            hash = "sha256-y4hynUfCoRddWUBLrimNGwJ7S8AbAdC5e5YRwVDD4lk=";
           };
           rgx-search-znver4 = {
             file = "rgx-v${version}-znver4-linux.tar.gz";
@@ -56,10 +64,31 @@
         };
       };
 
+      # The statically linked musl build is a libc variant, not an ISA tier.
+      # It does not go through autoPatchelfHook: there is no ELF interpreter
+      # to rewrite on a static binary.
+      musl = {
+        x86_64-linux = {
+          rgx-search-musl = {
+            file = "rgx-v${version}-x86_64-linux-musl.tar.gz";
+            hash = "sha256-cFmvf32S0jRwVba2xdL+NfTdWi5Ms76Xe+ETx0nm2ms=";
+          };
+        };
+      };
+
       # The package is rgx-search, the name the project already uses on
       # crates.io and the AUR; the binary it installs is rgx.
+      #
+      # `static` says the archive holds a statically linked executable: there
+      # is no ELF interpreter to rewrite, so autoPatchelfHook must not run on
+      # it (it would fail looking for one).
       mkRgx =
-        pkgs: file: hash:
+        pkgs:
+        {
+          file,
+          hash,
+          static ? false,
+        }:
         pkgs.stdenv.mkDerivation {
           pname = "rgx-search";
           inherit version;
@@ -71,9 +100,9 @@
 
           # The archive holds a prebuilt ELF/Mach-O binary, so on Linux its
           # interpreter and shared-library paths have to be rewritten for the
-          # Nix store.
-          nativeBuildInputs = pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.autoPatchelfHook;
-          buildInputs = pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.stdenv.cc.cc.lib;
+          # Nix store -- unless it is a static binary, which has neither.
+          nativeBuildInputs = pkgs.lib.optional (pkgs.stdenv.hostPlatform.isLinux && !static) pkgs.autoPatchelfHook;
+          buildInputs = pkgs.lib.optional (pkgs.stdenv.hostPlatform.isLinux && !static) pkgs.stdenv.cc.cc.lib;
 
           sourceRoot = ".";
           dontBuild = true;
@@ -127,11 +156,17 @@
       packages = forAllSystems (
         pkgs:
         let
-          mk = a: mkRgx pkgs a.file a.hash;
-          portable = mk assets.${pkgs.stdenv.hostPlatform.system};
+          sys = pkgs.stdenv.hostPlatform.system;
+          mk = a: mkRgx pkgs a;
+          portable = mk assets.${sys};
           tunedHere =
-            if builtins.hasAttr pkgs.stdenv.hostPlatform.system tuned then
-              builtins.mapAttrs (_: a: mkRgx pkgs a.file a.hash) tuned.${pkgs.stdenv.hostPlatform.system}
+            if builtins.hasAttr sys tuned then
+              builtins.mapAttrs (_: a: mk a) tuned.${sys}
+            else
+              { };
+          muslHere =
+            if builtins.hasAttr sys musl then
+              builtins.mapAttrs (_: a: mk (a // { static = true; })) musl.${sys}
             else
               { };
         in
@@ -140,6 +175,7 @@
           default = portable;
         }
         // tunedHere
+        // muslHere
       );
 
       apps = forAllSystems (pkgs: {
