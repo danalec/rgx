@@ -1,0 +1,4 @@
+2026-09-26 14:00:00 INFO worker-0 req=1000 status=500 {"user": "u0", "ms": 0}
+2026-09-26 14:01:01 INFO worker-1 req=1001 status=200 {"user": "u1", "ms": 3}
+2026-09-26 14:02:02 INFO worker-2 req=1002 status=200 {"user": "u2", "ms": 6}
+2026-09-26 14:03:03 INFO worker-3 req=1003 status=200 {"user": 

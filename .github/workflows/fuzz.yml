@@ -1,0 +1,139 @@
+name: Fuzz
+
+# Coverage-guided fuzzing of the full adapter registry, on a schedule.
+#
+# `crates/rgx-core/fuzz` drives `process` -- the whole registry, so input
+# flows through the real parsers rather than an isolated codec. It needs
+# nightly (cargo-fuzz) and clang (libfuzzer), neither of which the main
+# gate uses.
+#
+# Scheduled rather than per-push on purpose: a bounded run finds panics,
+# and a growing corpus is the point. Each run seeds from the committed
+# corpus and the previous run's artifacts, so a crash found once keeps
+# being replayed. A job that only runs when someone remembers is a job
+# that finds nothing.
+
+on:
+  schedule:
+    # Weekly, Tuesday 06:17 UTC. Off the hour so it does not contend
+    # with every other scheduled workflow that fires at :00.
+    - cron: "17 6 * * 2"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "minutes to fuzz for"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+  # The corpus of the previous run is an artifact of this repository, and
+  # the workflow reads it. Without this scope the download is refused and
+  # the corpus never grows, which is the thing the workflow is for.
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: process
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nightly with the fuzzing prerequisites
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Ensure clang is present
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Cache cargo and the fuzz corpus
+        uses: swatinem/rust-cache@v2
+        with:
+          # cargo-fuzz keeps its target under fuzz/target; the corpus is
+          # the thing worth carrying between runs, so a crash found in
+          # one run is replayed in the next.
+          workspaces: |
+            .
+            crates/rgx-core/fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # The corpus of the previous run is the other half of the seed, and
+      # it was not being fetched. The workflow uploaded the corpus at the
+      # end of every run and never downloaded it, so every run started
+      # from the ten committed seeds and walked the same ground again --
+      # and the header above, which says the corpus grows, was a claim
+      # the file did not make true.
+      #
+      # The artifact lives in this repository, so reading it is a read:
+      # the actions scope is what the download needs, and without it the
+      # call is refused and the corpus stays at the seeds.
+      - name: Carry the corpus of the previous run
+        working-directory: crates/rgx-core/fuzz
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p corpus/process
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow fuzz.yml \
+                     --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run_id" ]; then
+            echo "no previous successful run: the committed seeds are the corpus"
+            exit 0
+          fi
+          tmp=$(mktemp -d)
+          if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+               --name "fuzz-corpus-$run_id" --dir "$tmp"; then
+            # no clobber: the seeds that are already here are the same seeds
+            cp -n "$tmp"/* corpus/process/ 2>/dev/null || true
+            echo "the corpus of run $run_id is in the seed"
+          else
+            echo "the corpus of run $run_id could not be fetched: the seeds are the corpus"
+          fi
+          rm -rf "$tmp"
+
+      # Bounded by wall clock, not by finding something. A run that
+      # stops when it finds a crash is a run that stops at the first
+      # panic and never explores past it; `-max_total_time` keeps going
+      # and leaves the input in the corpus.
+      - name: Fuzz the registry
+        working-directory: crates/rgx-core/fuzz
+        run: |
+          MINUTES="${{ github.event.inputs.minutes || '10' }}"
+          cargo +nightly fuzz run process -- -max_total_time=$((MINUTES * 60))
+
+      # The corpus is the output that matters. Uploading it means the
+      # next run starts from everything this one reached, which is the
+      # whole point of a growing corpus.
+      - name: Upload the corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ github.run_id }}
+          path: crates/rgx-core/fuzz/corpus/process
+          if-no-files-found: ignore
+          retention-days: 90
+
+      # The crashes are the other half of the output, and they were being
+      # lost: libFuzzer writes the input that crashed into the artifacts
+      # directory -- not into the corpus -- and only the corpus was
+      # uploaded. A run whose crash is not uploaded leaves the panic in the
+      # log and the bytes nowhere, and bytes are what a fix needs: the input
+      # of the crash of the third of November of 2026 was gone, and the test
+      # that holds the fix had to be built by hand on the same path.
+      - name: Upload the crashes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-${{ github.run_id }}
+          path: crates/rgx-core/fuzz/artifacts/process
+          if-no-files-found: ignore
+          retention-days: 90

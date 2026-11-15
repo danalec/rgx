@@ -1,0 +1,15 @@
+tool,corpus,round,ms
+rg,registry,1,1308.4
+rgx,registry,1,471.5
+rg,registry,2,1331.9
+rgx,registry,2,446.6
+rg,registry,3,1299.9
+rgx,registry,3,439.2
+rg,registry,4,1309.7
+rgx,registry,4,474.7
+rg,registry,5,1299.1
+rgx,registry,5,438.7
+rg,registry,6,1308.7
+rgx,registry,6,439.6
+rg,registry,7,1354.9
+rgx,registry,7,481.9

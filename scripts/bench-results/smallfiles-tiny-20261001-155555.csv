@@ -1,0 +1,5 @@
+tool,corpus,round,ms
+rg,tiny,1,898.1
+rgx,tiny,1,210.4
+rg,tiny,2,898.2
+rgx,tiny,2,202.4
